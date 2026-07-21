@@ -320,7 +320,8 @@ exports.handleMessage = async (req, res) => {
         }
 
         const ai = new GoogleGenAI({ apiKey });
-        const modelName = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+        const rawModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+        const modelName = rawModel === 'gemini-3.5-flash' ? 'gemini-1.5-flash' : rawModel;
 
         let response = await generateContentFast(ai, {
             model: modelName,
@@ -425,6 +426,6 @@ exports.handleMessage = async (req, res) => {
                 retryAfter: 30
             });
         }
-        res.status(500).json({ error: "AI Engine encountered an error." });
+        res.status(500).json({ error: "AI Engine encountered an error.", details: errMsg });
     }
 };
