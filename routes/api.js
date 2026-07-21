@@ -114,7 +114,7 @@ router.use('/face', faceRoutes);
 
 // Chatbot (Public & Authenticated context passed in body)
 const chatbotController = require('../controllers/chatbot.controller');
-router.post('/chatbot', auth, chatbotController.handleMessage);
+router.post('/assistant', auth, chatbotController.handleMessage);
 
 // Leaves
 const leaveController = require('../controllers/leave.controller');
