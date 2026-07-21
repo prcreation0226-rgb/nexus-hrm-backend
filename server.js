@@ -1,3 +1,5 @@
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first'); // Fixes 30s IPv6 timeout on Railway/Render
 process.env.TZ = "Asia/Kolkata";
 const express = require('express');
 const cors = require('cors');
