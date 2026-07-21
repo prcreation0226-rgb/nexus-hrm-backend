@@ -320,7 +320,7 @@ exports.handleMessage = async (req, res) => {
         }
 
         const ai = new GoogleGenAI({ apiKey });
-        const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+        const modelName = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 
         let response = await generateContentFast(ai, {
             model: modelName,
