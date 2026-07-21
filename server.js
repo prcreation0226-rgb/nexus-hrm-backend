@@ -18,6 +18,7 @@ const emailQueueWorker = require('./utils/emailQueueWorker');
 emailQueueWorker.startWorker();
 
 const app = express();
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 
 // ─── Security: Helmet HTTP Headers ───
