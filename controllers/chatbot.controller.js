@@ -94,12 +94,34 @@ const superadminTools = [
 ];
 
 async function generateContentFast(ai, params) {
-    try {
-        const res = await ai.models.generateContent(params);
-        return res;
-    } catch (err) {
-        throw err;
+    const modelsToTry = [
+        params.model,
+        'gemini-2.5-flash',
+        'gemini-1.5-flash',
+        'gemini-2.0-flash'
+    ].filter((m, i, arr) => m && arr.indexOf(m) === i);
+
+    let lastError = null;
+    for (const modelCandidate of modelsToTry) {
+        try {
+            const res = await ai.models.generateContent({
+                ...params,
+                model: modelCandidate
+            });
+            return res;
+        } catch (err) {
+            lastError = err;
+            const errMsg = err.message || JSON.stringify(err);
+            console.warn(`[Gemini API Warning] Model '${modelCandidate}' failed: ${errMsg.slice(0, 150)}. Trying next fallback model...`);
+            if (errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand') || errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+                await new Promise(r => setTimeout(r, 300));
+                continue;
+            } else {
+                throw err;
+            }
+        }
     }
+    throw lastError;
 }
 
 function formatCurrency(amount, currency = 'USD', locale = 'en-US') {
@@ -600,11 +622,11 @@ exports.handleMessage = async (req, res) => {
         res.json({ text: aiText });
     } catch (err) {
         console.error("Chatbot Error:", err.message || err);
-        const errMsg = err.message || '';
-        if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota')) {
+        const errMsg = typeof err === 'object' ? JSON.stringify(err) : String(err);
+        if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota') || errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand')) {
             return res.status(429).json({ 
-                error: "AI is temporarily busy due to high usage. Please try again in a few seconds.",
-                retryAfter: 30
+                error: "AI Engine is temporarily experiencing high demand on Google servers. Please try again in a few seconds.",
+                retryAfter: 5
             });
         }
         res.status(500).json({ error: "AI Engine encountered an error.", details: errMsg });
