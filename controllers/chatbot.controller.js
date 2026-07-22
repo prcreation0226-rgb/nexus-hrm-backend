@@ -143,23 +143,63 @@ function formatLocalResponse(toolName, result, context = {}) {
                 return profLines.join('\n');
 
             case 'getEmployeeAttendance':
+                const userMsgAtt = (context.userMessage || '').toLowerCase();
                 const todayStatus = result.today?.status ? result.today.status.toUpperCase() : 'No clock-in record today';
                 const todayIn = result.today?.in_time ?? '--';
                 const todayOut = result.today?.out_time ?? '--';
                 const m = result.monthSummary || {};
+
+                // 1. Specific Check-out query ("am I checked out today?", "check out time", "nikla", "out time")
+                if (/check(ed)?\s*out|out\s*time|checkout|gaya|nikla/i.test(userMsgAtt)) {
+                    if (todayOut && todayOut !== '--') {
+                        return `✅ Yes, you have checked out today at **${todayOut}** (Clocked in: ${todayIn}, Total: ${result.today?.total_hours ?? 0} hrs).`;
+                    } else if (todayIn && todayIn !== '--') {
+                        return `⏳ No, you are currently clocked in (since **${todayIn}**), but you have NOT checked out yet today (Total hours logged so far: ${result.today?.total_hours ?? 0} hrs).`;
+                    } else {
+                        return `❌ No, you have not clocked in or checked out today.`;
+                    }
+                }
+
+                // 2. Specific Check-in / In-time query ("what time did I clock in?", "in time", "check in", "aaya")
+                if (/check\s*in|in\s*time|checkin|aaya|clock\s*in|login\s*time/i.test(userMsgAtt)) {
+                    if (todayIn && todayIn !== '--') {
+                        return `⏱️ You clocked in today at **${todayIn}** (Status: ${todayStatus}).`;
+                    } else {
+                        return `❌ You have not clocked in today.`;
+                    }
+                }
+
+                // 3. Today-only query ("today attendance", "aaj ki hajri")
+                if (/today|aaj/i.test(userMsgAtt)) {
+                    return `📋 **Today's Attendance:**\n- **Status:** ${todayStatus}\n- **In Time:** ${todayIn} | **Out Time:** ${todayOut}`;
+                }
+
+                // 4. Default: Full summary if user asked for general attendance / monthly overview
                 return `📋 **Today's Attendance Status:**\n- **Status:** ${todayStatus}\n- **In Time:** ${todayIn} | **Out Time:** ${todayOut}\n\n📊 **This Month's Summary:**\n- ✅ **Present:** ${m.present ?? 0} days\n- ❌ **Absent:** ${m.absent ?? 0} days\n- ⚠️ **Late:** ${m.late ?? 0} days\n- ⏱️ **Total Hours:** ${m.total_hours ?? 0} hrs`;
 
             case 'getEmployeeSalary':
+                const userMsgSal = (context.userMessage || '').toLowerCase();
                 const calc = result.calculation || {};
                 const netSal = calc.netSalarySoFar ?? 0;
                 const grossEar = calc.grossEarningsSoFar ?? 0;
                 const advDed = calc.advanceDeduction ?? 0;
                 const uifDed = calc.uifDeduction ?? 0;
+
+                if (/net|kitna milega|hath me|hand|payout/i.test(userMsgSal)) {
+                    return `💵 Your net salary accrued so far this month is **${curr(netSal)}** (after deductions).`;
+                }
+
                 return `💰 **Salary Accrual (Current Month):**\n- **Gross Earnings:** ${curr(grossEar)}\n- **Advance Deductions:** ${curr(advDed)}\n- **Tax/UIF Deductions:** ${curr(uifDed)}\n- 💵 **Net Salary So Far:** ${curr(netSal)}`;
 
             case 'getEmployeeLeaves':
+                const userMsgLeave = (context.userMessage || '').toLowerCase();
                 const bal = result.balances || {};
                 const hist = Array.isArray(result.history) ? result.history : [];
+
+                if (/balance|remaining|left|kitni chutti|kitna leave|available/i.test(userMsgLeave)) {
+                    return `🏖️ **Your Current Leave Balances:**\n- **Annual:** ${bal.annual ?? 0} days\n- **Sick:** ${bal.sick ?? 0} days\n- **Emergency:** ${bal.emergency ?? 0} days\n- **Unpaid:** ${bal.unpaid ?? 0} days`;
+                }
+
                 const histStr = hist.length === 0 ? "No recent leave records found." : hist.map(h => `- ${h.leave_type}: ${h.days ?? 0} days (${h.status ?? 'N/A'})`).join('\n');
                 return `🏖️ **Leave Balance:**\n- **Annual:** ${bal.annual ?? 0} days\n- **Sick:** ${bal.sick ?? 0} days\n- **Emergency:** ${bal.emergency ?? 0} days\n- **Unpaid:** ${bal.unpaid ?? 0} days\n\n📜 **Recent Leave History:**\n${histStr}`;
 
@@ -196,10 +236,22 @@ function formatLocalResponse(toolName, result, context = {}) {
 
             case 'checkSpecificEmployeeAttendance':
                 if (result.error) return `⚠️ ${result.error}`;
+                const userMsgEmpAtt = (context.userMessage || '').toLowerCase();
                 const empName = result.employee_name || 'Employee';
                 const statusStr = result.attendance?.status ? result.attendance.status.toUpperCase() : 'ABSENT / NOT LOGGED IN';
                 const inT = result.attendance?.in_time ?? '--';
                 const outT = result.attendance?.out_time ?? '--';
+
+                if (/check(ed)?\s*out|out\s*time|checkout|gaya|nikla/i.test(userMsgEmpAtt)) {
+                    if (outT && outT !== '--') {
+                        return `✅ Yes, **${empName}** checked out today at **${outT}**.`;
+                    } else if (inT && inT !== '--') {
+                        return `⏳ No, **${empName}** is clocked in (since **${inT}**), but has NOT checked out yet today.`;
+                    } else {
+                        return `❌ **${empName}** has not clocked in or checked out today.`;
+                    }
+                }
+
                 return `👤 **Attendance Status for ${empName}:**\n- **Today's Status:** ${statusStr}\n- **Clock In:** ${inT} | **Clock Out:** ${outT}`;
 
             case 'getTodayAttendanceSummary':
@@ -297,7 +349,7 @@ exports.handleMessage = async (req, res) => {
         const authUser = extractUser(req);
         
         // ── Fetch Company Context for Formatting ──
-        let companySettings = { currency: 'USD', locale: 'en-US' };
+        let companySettings = { currency: 'USD', locale: 'en-US', userMessage: message };
         if (authUser && authUser.company_id) {
             try {
                 const [settingsRows] = await db.execute('SELECT currency FROM settings WHERE company_id = ? LIMIT 1', [authUser.company_id]);

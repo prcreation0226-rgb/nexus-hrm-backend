@@ -28,6 +28,12 @@ async function runTests() {
     let t2 = formatLocalResponse('getEmployeeAttendance', { monthSummary: { present: null, absent: null, late: 0, total_hours: null } }, {});
     assert(t2.includes("Present:") && t2.includes("0 days") && t2.includes("0 hrs"), "getEmployeeAttendance converts null numeric to 0");
 
+    let tCheckout1 = formatLocalResponse('getEmployeeAttendance', { today: { in_time: "09:00:00", out_time: "--", total_hours: 2.44 } }, { userMessage: "ami checked out today ?" });
+    assert(tCheckout1.includes("No, you are currently clocked in") && tCheckout1.includes("09:00:00"), "getEmployeeAttendance smart check-out query answers directly");
+
+    let tCheckout2 = formatLocalResponse('getEmployeeAttendance', { today: { in_time: "09:00:00", out_time: "17:30:00", total_hours: 8.5 } }, { userMessage: "am i checked out?" });
+    assert(tCheckout2.includes("Yes, you have checked out today at **17:30:00**"), "getEmployeeAttendance smart checked-out positive answer");
+
     let t3 = formatLocalResponse('getEmployeeSalary', { calculation: { netSalarySoFar: 1500 } }, { currency: 'INR' });
     assert(t3.includes("1,500"), "getEmployeeSalary formats currency correctly");
 
