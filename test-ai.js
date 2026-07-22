@@ -2,26 +2,30 @@ require('dotenv').config();
 const { GoogleGenAI } = require('@google/genai');
 
 async function test() {
-    console.log("Starting test...");
-    const apiKey = 'AIzaSyFakeKey1234567890';
-    const modelName = 'gemini-pro';
-    console.log(`Using Key: ${apiKey.substring(0, 5)}...`);
-    console.log(`Using Model: ${modelName}`);
-
+    const apiKey = process.env.GEMINI_API_KEY;
     const ai = new GoogleGenAI({ apiKey });
-    const startTime = Date.now();
-    try {
-        console.log("Sending request...");
-        const response = await ai.models.generateContent({
-            model: modelName,
-            contents: [{ role: 'user', parts: [{ text: 'Hello, what is your name?' }] }]
-        });
-        const duration = Date.now() - startTime;
-        console.log(`Response received in ${duration}ms!`);
-        console.log("Response text:", response.candidates[0].content.parts[0].text);
-    } catch (err) {
-        const duration = Date.now() - startTime;
-        console.error(`Error after ${duration}ms:`, err.message);
+    
+    const models = [
+        'gemini-1.5-flash',
+        'gemini-1.5-pro',
+        'gemini-1.0-pro',
+        'gemini-pro',
+        'gemini-1.5-flash-8b',
+        'gemini-2.0-flash'
+    ];
+
+    for (const modelName of models) {
+        console.log(`\nTesting Model: ${modelName}`);
+        try {
+            const response = await ai.models.generateContent({
+                model: modelName,
+                contents: [{ role: 'user', parts: [{ text: 'Hello' }] }]
+            });
+            console.log(`✅ SUCCESS with ${modelName}`);
+            return;
+        } catch (err) {
+            console.error(`❌ FAILED with ${modelName}:`, err.message);
+        }
     }
 }
 

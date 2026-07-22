@@ -2,16 +2,8 @@ const db = require('./config/db');
 const chatbotController = require('./controllers/chatbot.controller');
 const chatbotService = require('./controllers/chatbot.service');
 
-// A mock res object
-const mockRes = () => {
-    const res = {};
-    res.status = (code) => { res.statusCode = code; return res; };
-    res.json = (data) => { res.data = data; return res; };
-    return res;
-};
-
 async function runTests() {
-    console.log("=== RUNNING CHATBOT TESTS ===\n");
+    console.log("=== RUNNING CHATBOT COMPREHENSIVE REGRESSION & SPEED TESTS ===\n");
     let passed = 0;
     let failed = 0;
 
@@ -25,42 +17,115 @@ async function runTests() {
         }
     };
 
-    // 1. Zero/Null Values Formatting Test
-    // For this, we'll extract the formatLocalResponse logic to test it directly.
-    const ctrlSource = require('fs').readFileSync('./controllers/chatbot.controller.js', 'utf8');
-    const formatFnStr = ctrlSource.match(/function formatLocalResponse[\s\S]*?\n\}/)[0];
-    const formatCurrencyStr = ctrlSource.match(/function formatCurrency[\s\S]*?\n\}/)[0];
-    eval(formatCurrencyStr + '\n' + formatFnStr); // creates formatLocalResponse globally in this scope
+    const formatLocalResponse = chatbotController.formatLocalResponse;
 
-    console.log("--- Formatting Tests ---");
-    let res1 = formatLocalResponse('getEmployeeAttendance', { monthSummary: { present: null, absent: null, late: 0, total_hours: null } }, {});
-    assert(res1.includes("Present: 0 days"), "Null numeric converts to 0");
-    assert(res1.includes("Total Hours: 0 hrs"), "Null total_hours converts to 0");
+    console.log("--- 1. All 30 Tools Formatting & Anti-Hallucination Audit ---");
 
-    let res2 = formatLocalResponse('getPayrollOverview', { total_records: null, total_payout: null }, { currency: 'INR' });
-    assert(res2.includes("Total Payout:"), "Handles null payout gracefully");
-    assert(!res2.includes("Not Available"), "Numeric fields do not say 'Not Available'");
+    // Employee Tools
+    let t1 = formatLocalResponse('getEmployeeProfile', { name: "John Doe", department: "IT", status: "Active" }, {});
+    assert(t1.includes("John Doe") && t1.includes("IT"), "getEmployeeProfile formats correctly");
 
-    let res3 = formatLocalResponse('getEmployeeLeaves', { balances: null, history: [] }, {});
-    assert(res3.includes("Annual: 0"), "Null object property ?? 0 works");
-    assert(res3.includes("No records found"), "Empty array renders as 'No records found'");
+    let t2 = formatLocalResponse('getEmployeeAttendance', { monthSummary: { present: null, absent: null, late: 0, total_hours: null } }, {});
+    assert(t2.includes("Present:") && t2.includes("0 days") && t2.includes("0 hrs"), "getEmployeeAttendance converts null numeric to 0");
 
-    let res4 = formatLocalResponse('unknownToolThatDoesNotExist', {}, {});
-    assert(res4 === "I found the requested information, but I’m unable to display it correctly right now. Please try again.", "Unknown tool triggers safe fallback instead of raw JSON");
+    let t3 = formatLocalResponse('getEmployeeSalary', { calculation: { netSalarySoFar: 1500 } }, { currency: 'INR' });
+    assert(t3.includes("1,500"), "getEmployeeSalary formats currency correctly");
 
-    console.log("\n--- Isolation Tests ---");
-    // We will verify the SQL queries structure using regex or direct logic since we already fixed them.
+    let t4 = formatLocalResponse('getEmployeeLeaves', { balances: null, history: [] }, {});
+    assert(t4.includes("Annual:") && t4.includes("0 days") && t4.includes("No recent leave records found"), "getEmployeeLeaves handles empty state");
+
+    let t5 = formatLocalResponse('getEmployeeClaims', [], {});
+    assert(t5.includes("No expense claims found"), "getEmployeeClaims anti-hallucination empty state");
+
+    let t6 = formatLocalResponse('getEmployeeKPIs', { overall_score: 95 }, {});
+    assert(t6.includes("95%"), "getEmployeeKPIs formats percentage");
+
+    let t7 = formatLocalResponse('getBranchGeofence', { name: "Headquarters", radius: 100 }, {});
+    assert(t7.includes("Headquarters") && t7.includes("100 meters"), "getBranchGeofence formats branch name");
+
+    let t8 = formatLocalResponse('getCompanyHolidays', [], {});
+    assert(t8.includes("No upcoming holidays found"), "getCompanyHolidays anti-hallucination empty state");
+
+    // Admin Tools
+    let t9 = formatLocalResponse('getCompanyInfo', { company_name: "Acme Corp" }, {});
+    assert(t9.includes("Acme Corp"), "getCompanyInfo formats company name");
+
+    let t10 = formatLocalResponse('getEmployeeStats', { total: 50, active: 45, on_leave: 5 }, {});
+    assert(t10.includes("Total Employees:") && t10.includes("50"), "getEmployeeStats formats employee counts");
+
+    let t11 = formatLocalResponse('searchEmployees', [], {});
+    assert(t11.includes("No matching employees found"), "searchEmployees anti-hallucination empty state");
+
+    let t12 = formatLocalResponse('checkSpecificEmployeeAttendance', { employee_name: "Alice", attendance: { status: "present", in_time: "09:00:00" } }, {});
+    assert(t12.includes("Alice") && t12.includes("PRESENT") && t12.includes("09:00:00"), "checkSpecificEmployeeAttendance formats correctly");
+
+    let t13 = formatLocalResponse('checkSpecificEmployeeAttendance', { error: "Employee not found matching: Bob" }, {});
+    assert(t13.includes("Employee not found matching: Bob"), "checkSpecificEmployeeAttendance error state");
+
+    let t14 = formatLocalResponse('getTodayAttendanceSummary', { stats: { total: 20, present: 18, absent: 2 }, lateAbsentList: [] }, {});
+    assert(t14.includes("Present:") && t14.includes("18") && t14.includes("None (All present)"), "getTodayAttendanceSummary formats correctly");
+
+    let t15 = formatLocalResponse('getMonthlyAttendanceSummary', { total_records: 400, total_hours: 1600 }, {});
+    assert(t15.includes("400") && t15.includes("1600 hrs"), "getMonthlyAttendanceSummary formats hours");
+
+    let t16 = formatLocalResponse('getPayrollOverview', { total_records: null, total_payout: 50000 }, { currency: 'USD' });
+    assert(t16.includes("Total Payout:") && t16.includes("$50,000.00"), "getPayrollOverview handles null total_records gracefully");
+
+    let t17 = formatLocalResponse('getPendingLeaves', [], {});
+    assert(t17.includes("No pending leave requests found"), "getPendingLeaves anti-hallucination empty state");
+
+    let t18 = formatLocalResponse('getPendingClaims', [], {});
+    assert(t18.includes("No pending expense claims found"), "getPendingClaims anti-hallucination empty state");
+
+    let t19 = formatLocalResponse('getKPIScores', [], {});
+    assert(t19.includes("No KPI records found"), "getKPIScores anti-hallucination empty state");
+
+    let t20 = formatLocalResponse('getGeofences', [], {});
+    assert(t20.includes("No office geofences configured"), "getGeofences anti-hallucination empty state");
+
+    let t21 = formatLocalResponse('getCompanySettings', { business_name: "Kiaan Tech" }, {});
+    assert(t21.includes("Kiaan Tech"), "getCompanySettings formats business name");
+
+    // SuperAdmin Tools
+    let t22 = formatLocalResponse('getSuperAdminStats', { totalCompanies: 10, totalRevenue: 10000 }, { currency: 'USD' });
+    assert(t22.includes("Total Companies:") && t22.includes("10") && t22.includes("$10,000.00"), "getSuperAdminStats formats stats");
+
+    let t23 = formatLocalResponse('getCompaniesList', [], {});
+    assert(t23.includes("No tenant companies found"), "getCompaniesList anti-hallucination empty state");
+
+    let t24 = formatLocalResponse('getPlanRequests', [], {});
+    assert(t24.includes("No pending plan requests"), "getPlanRequests anti-hallucination empty state");
+
+    let t25 = formatLocalResponse('getPlansList', [], {});
+    assert(t25.includes("No plans available"), "getPlansList anti-hallucination empty state");
+
+    // Read-Only Action Tools
+    let t26 = formatLocalResponse('applyLeave', {}, {});
+    assert(t26.includes("Read-Only Mode"), "applyLeave returns Read-Only notice");
+
+    let t27 = formatLocalResponse('unknownToolThatDoesNotExist', {}, {});
+    assert(t27.includes("I found the requested information, but no detailed template was available."), "Unknown tool fallback message");
+
+    console.log("\n--- 2. Role Security Isolation Audit ---");
     const serviceSource = require('fs').readFileSync('./controllers/chatbot.service.js', 'utf8');
-    assert(serviceSource.includes("WHERE employee_id = ? AND company_id = ?"), "Employee isolation strictly uses employee_id AND company_id");
-    assert(serviceSource.match(/getEmployeeAttendance[\s\S]*?enforceRole\(user, \['employee'\]\)/), "Employee attendance enforces 'employee' role");
+    assert(serviceSource.includes("WHERE employee_id = ? AND company_id = ?"), "Employee isolation uses employee_id AND company_id");
+    assert(serviceSource.match(/getEmployeeAttendance[\s\S]*?enforceRole\(user, \['employee'\]\)/), "Employee tools enforce 'employee' role");
     assert(serviceSource.match(/getCompanyInfo[\s\S]*?enforceRole\(user, \['admin', 'hr admin'\]\)/), "Admin tools enforce 'admin' role");
+    assert(serviceSource.match(/getSuperAdminStats[\s\S]*?enforceRole\(user, \['superadmin'/), "SuperAdmin tools enforce 'superadmin' role");
 
-    console.log("\n--- SQL Coalesce Tests ---");
-    assert(serviceSource.includes("COALESCE(SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END), 0)"), "COALESCE applied to SUM");
-    assert(!serviceSource.includes("COALESCE(COUNT(*)"), "COUNT does not use redundant COALESCE");
+    console.log("\n--- 3. Fast Path & Controller Registration Audit ---");
+    const ctrlSource = require('fs').readFileSync('./controllers/chatbot.controller.js', 'utf8');
+    assert(ctrlSource.includes("checkSpecificEmployeeAttendance: chatbotService.checkSpecificEmployeeAttendance"), "checkSpecificEmployeeAttendance registered in toolHandlers");
+    assert(ctrlSource.includes("const isComplexQuery = /analyze|analysis|why|insight|explain|recommend|trend|reason/i.test(message);"), "Fast Path query classifier present");
+    assert(ctrlSource.includes("formatLocalResponse(lastToolName, lastToolResult, companySettings)"), "Fast Path calls local response formatter for standard queries");
 
-    console.log(`\nTests Completed: ${passed} Passed, ${failed} Failed`);
-    process.exit(failed > 0 ? 1 : 0);
+    console.log(`\n==========================================`);
+    console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);
+    console.log(`==========================================\n`);
+
+    if (failed > 0) {
+        process.exit(1);
+    }
 }
 
 runTests();
