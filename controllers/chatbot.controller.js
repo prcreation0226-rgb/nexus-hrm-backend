@@ -492,7 +492,7 @@ exports.handleMessage = async (req, res) => {
         if (!isActionQuery) {
             const cachedVal = aiCache.get(cacheKey);
             if (cachedVal) {
-                return res.json({ response: cachedVal, cached: true });
+                return res.json({ text: cachedVal, cached: true });
             }
         }
 
@@ -504,7 +504,7 @@ exports.handleMessage = async (req, res) => {
             const uId = authUser?.custom_id || authUser?.employee_id || authUser?.id || 'N/A';
             const replyText = `Your name is **${uName}** (Role: ${uRole}, Email: ${uEmail}, ID: ${uId}).`;
             return res.json({
-                response: replyText,
+                text: replyText,
                 toolsUsed: ['getUserProfile'],
                 tokensUsed: 0,
                 responseTimeMs: Date.now() - requestStartTime
@@ -547,7 +547,7 @@ exports.handleMessage = async (req, res) => {
                 const replyText = formatLocalResponse(directTool, dbRes, companySettings);
                 aiCache.set(cacheKey, replyText);
                 return res.json({
-                    response: replyText,
+                    text: replyText,
                     toolsUsed: [directTool],
                     tokensUsed: 0,
                     responseTimeMs: Date.now() - requestStartTime
