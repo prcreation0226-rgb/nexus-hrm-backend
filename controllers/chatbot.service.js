@@ -282,10 +282,21 @@ async function checkSpecificEmployeeAttendance(user, args) {
         [emp.id]
     );
 
+    const [monthly] = await db.execute(
+        `SELECT 
+            COALESCE(SUM(CASE WHEN status='present' THEN 1 ELSE 0 END), 0) as present,
+            COALESCE(SUM(CASE WHEN status='absent' THEN 1 ELSE 0 END), 0) as absent,
+            COALESCE(SUM(CASE WHEN status='late' THEN 1 ELSE 0 END), 0) as late,
+            ROUND(COALESCE(SUM(total_hours), 0), 2) as total_hours
+         FROM attendance WHERE employee_id = ? AND MONTH(date) = MONTH(CURDATE()) AND YEAR(date) = YEAR(CURDATE())`,
+        [emp.id]
+    );
+
     return {
         employee_name: emp.name,
         employee_id: emp.custom_id,
-        today_attendance: att.length > 0 ? att[0] : { status: "Not clocked in today" }
+        today_attendance: att.length > 0 ? att[0] : null,
+        monthly_stats: monthly.length > 0 ? monthly[0] : { present: 0, absent: 0, late: 0, total_hours: 0 }
     };
 }
 

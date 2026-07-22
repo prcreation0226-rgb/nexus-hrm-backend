@@ -307,10 +307,13 @@ function formatLocalResponse(toolName, result, context = {}) {
                 if (result.error) return `⚠️ ${result.error}`;
                 const userMsgEmpAtt = (context.userMessage || '').toLowerCase();
                 const empName = result.employee_name || 'Employee';
-                const statusStr = result.attendance?.status ? result.attendance.status.toUpperCase() : 'ABSENT / NOT LOGGED IN';
-                const inT = result.attendance?.in_time ?? '--';
-                const outT = result.attendance?.out_time ?? '--';
+                const todayAtt = result.today_attendance;
+                const mStats = result.monthly_stats || {};
+                const statusStr = todayAtt?.status ? todayAtt.status.toUpperCase() : 'ABSENT / NOT CLOCKED IN';
+                const inT = todayAtt?.in_time ?? '--';
+                const outT = todayAtt?.out_time ?? '--';
 
+                // 1. Check-out query ("did Rahul check out?", "Rahul checkout time")
                 if (/check(ed)?\s*out|out\s*time|checkout|gaya|nikla/i.test(userMsgEmpAtt)) {
                     if (outT && outT !== '--') {
                         return `✅ Yes, **${empName}** checked out today at **${outT}**.`;
@@ -321,7 +324,38 @@ function formatLocalResponse(toolName, result, context = {}) {
                     }
                 }
 
-                return `👤 **Attendance Status for ${empName}:**\n- **Today's Status:** ${statusStr}\n- **Clock In:** ${inT} | **Clock Out:** ${outT}`;
+                // 2. Present / Check-in query ("Is Rahul present today?", "Did Rahul check in today?")
+                if (/present|check(ed)?\s*in|in\s*time|checkin|aaya|present today/i.test(userMsgEmpAtt) && !/absent|late|monthly/i.test(userMsgEmpAtt)) {
+                    if (todayAtt && (todayAtt.status === 'present' || todayAtt.status === 'late' || todayAtt.status === 'half_day')) {
+                        return `✅ Yes, **${empName}** is present today (Clocked in at **${inT}**, Status: ${todayAtt.status.toUpperCase()}).`;
+                    } else {
+                        return `❌ No, **${empName}** is absent / has not clocked in today.`;
+                    }
+                }
+
+                // 3. Absent query ("How many days was Rahul absent?", "Is Rahul absent?")
+                if (/absent/i.test(userMsgEmpAtt) && !/monthly|summary/i.test(userMsgEmpAtt)) {
+                    if (/how many|days|count/i.test(userMsgEmpAtt)) {
+                        return `❌ **${empName}** has been absent for **${mStats.absent ?? 0}** days this month.`;
+                    }
+                    if (todayAtt && todayAtt.status === 'present') {
+                        return `✅ No, **${empName}** is present today (Clocked in at **${inT}**).`;
+                    } else {
+                        return `❌ Yes, **${empName}** is absent / has not clocked in today.`;
+                    }
+                }
+
+                // 4. Late query ("Show Rahul's late records", "Is Rahul late?")
+                if (/late/i.test(userMsgEmpAtt) && !/monthly|summary/i.test(userMsgEmpAtt)) {
+                    return `⚠️ **${empName}** has **${mStats.late ?? 0}** late check-ins this month (Today's status: ${statusStr}).`;
+                }
+
+                // 5. Monthly summary ("Show Rahul's monthly attendance")
+                if (/monthly|month|history|summary/i.test(userMsgEmpAtt)) {
+                    return `📊 **Monthly Attendance for ${empName}:**\n- ✅ **Present:** ${mStats.present ?? 0} days\n- ❌ **Absent:** ${mStats.absent ?? 0} days\n- ⚠️ **Late:** ${mStats.late ?? 0} days\n- ⏱️ **Total Hours:** ${mStats.total_hours ?? 0} hrs`;
+                }
+
+                return `👤 **Attendance Status for ${empName}:**\n- **Today's Status:** ${statusStr}\n- **Clock In:** ${inT} | **Clock Out:** ${outT}\n- **Monthly Present:** ${mStats.present ?? 0} days | **Absent:** ${mStats.absent ?? 0} days | **Late:** ${mStats.late ?? 0} days`;
 
             case 'getTodayAttendanceSummary':
                 const userMsgSum = (context.userMessage || '').toLowerCase();

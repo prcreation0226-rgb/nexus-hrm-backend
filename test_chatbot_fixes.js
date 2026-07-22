@@ -62,8 +62,8 @@ async function runTests() {
     let t11 = formatLocalResponse('searchEmployees', [], {});
     assert(t11.includes("No matching employees found"), "searchEmployees anti-hallucination empty state");
 
-    let t12 = formatLocalResponse('checkSpecificEmployeeAttendance', { employee_name: "Alice", attendance: { status: "present", in_time: "09:00:00" } }, {});
-    assert(t12.includes("Alice") && t12.includes("PRESENT") && t12.includes("09:00:00"), "checkSpecificEmployeeAttendance formats correctly");
+    let t12 = formatLocalResponse('checkSpecificEmployeeAttendance', { employee_name: "Alice", today_attendance: { status: "present", in_time: "09:00:00" }, monthly_stats: { present: 20 } }, {});
+    assert(t12.includes("Alice") && t12.includes("PRESENT"), "checkSpecificEmployeeAttendance formats correctly");
 
     let t13 = formatLocalResponse('checkSpecificEmployeeAttendance', { error: "Employee not found matching: Bob" }, {});
     assert(t13.includes("Employee not found matching: Bob"), "checkSpecificEmployeeAttendance error state");
