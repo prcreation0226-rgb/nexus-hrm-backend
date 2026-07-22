@@ -126,6 +126,17 @@ function formatLocalResponse(toolName, result, context = {}) {
         switch(toolName) {
             // -- Employee Tools --
             case 'getEmployeeProfile':
+                const userMsgProf = (context.userMessage || '').toLowerCase();
+                if (/employee\s*id|my\s*id|custom\s*id/i.test(userMsgProf)) {
+                    return `👤 Your Employee Custom ID is **${result.custom_id ?? 'N/A'}**.`;
+                }
+                if (/join|joined|when did i/i.test(userMsgProf)) {
+                    return `📅 You joined the company on **${result.joined_date ? String(result.joined_date).slice(0, 10) : 'N/A'}**.`;
+                }
+                if (/manager|owner|boss|head/i.test(userMsgProf)) {
+                    return `👔 Your manager / company admin is **${result.manager_name ?? 'Admin'}**.`;
+                }
+
                 const profLines = [
                     `👤 **Employee Profile**`,
                     `- **Name:** ${result.name ?? 'Not Available'}`,
@@ -224,11 +235,27 @@ function formatLocalResponse(toolName, result, context = {}) {
                 return `🏢 **Company Information:**\n- **Company Name:** ${result.company_name ?? 'Not Available'}\n- **Owner:** ${result.owner_name ?? 'Not Available'}\n- **Plan:** ${result.plan ?? 'Not Available'}\n- **Status:** ${result.status ?? 'Active'}\n- **Employee Limit:** ${result.employee_limit ?? 'Unlimited'}`;
 
             case 'getEmployeeStats':
+                const userMsgStats = (context.userMessage || '').toLowerCase();
+                if (/active\s*employee|how many active/i.test(userMsgStats)) {
+                    return `👥 There are **${result.active ?? 0}** active employees in your company (out of ${result.total ?? 0} total).`;
+                }
+                if (/inactive|on\s*leave/i.test(userMsgStats)) {
+                    return `👥 There are **${result.on_leave ?? 0}** employees currently on leave / inactive.`;
+                }
+                if (/how many employee|total employee|count/i.test(userMsgStats)) {
+                    return `👥 Your company currently has **${result.total ?? 0}** total employees (${result.active ?? 0} active, ${result.on_leave ?? 0} on leave).`;
+                }
                 return `👥 **Company Employee Statistics:**\n- **Total Employees:** ${result.total ?? 0}\n- **Active Employees:** ${result.active ?? 0}\n- **On Leave:** ${result.on_leave ?? 0}`;
 
             case 'searchEmployees':
+                const userMsgSearch = (context.userMessage || '').toLowerCase();
                 const emps = Array.isArray(result) ? result : [];
                 if (emps.length === 0) return "🔍 **Search Results:** No matching employees found.";
+                
+                if (/join|joined|when did/i.test(userMsgSearch)) {
+                    return `📅 ` + emps.map(e => `**${e.name}** joined on **${e.joined_date ? String(e.joined_date).slice(0, 10) : 'N/A'}**`).join('\n');
+                }
+
                 return `🔍 **Employee Search Results:**\n` + emps.map(e => {
                     const deptStr = (e.department && e.department !== 'General' && e.department !== 'Not Available') ? ` - Dept: ${e.department}` : '';
                     return `- **${e.name}** (ID: ${e.custom_id ?? 'N/A'})${deptStr} [Status: ${e.status ?? 'Active'}]`;
@@ -255,9 +282,21 @@ function formatLocalResponse(toolName, result, context = {}) {
                 return `👤 **Attendance Status for ${empName}:**\n- **Today's Status:** ${statusStr}\n- **Clock In:** ${inT} | **Clock Out:** ${outT}`;
 
             case 'getTodayAttendanceSummary':
+                const userMsgSum = (context.userMessage || '').toLowerCase();
                 const st = result.stats || {};
                 const list = Array.isArray(result.lateAbsentList) ? result.lateAbsentList : [];
                 const listStr = list.length === 0 ? "None (All present)" : list.map(e => e.name).join(', ');
+
+                if (/who is absent|who came late|late coming|who is late/i.test(userMsgSum)) {
+                    return `⚠️ **Late / Absent Employees Today:** ${listStr}`;
+                }
+                if (/how many present|present count/i.test(userMsgSum)) {
+                    return `✅ **${st.present ?? 0}** employees are present today (out of ${st.total ?? 0} total).`;
+                }
+                if (/how many absent|absent count/i.test(userMsgSum)) {
+                    return `❌ **${st.absent ?? 0}** employees are absent today.`;
+                }
+
                 return `📊 **Today's Attendance Overview:**\n- **Total Employees:** ${st.total ?? 0}\n- ✅ **Present:** ${st.present ?? 0}\n- ❌ **Absent:** ${st.absent ?? 0}\n- ⚠️ **Late:** ${st.late ?? 0}\n\n⚠️ **Late/Absent Employee List:**\n${listStr}`;
 
             case 'getMonthlyAttendanceSummary':

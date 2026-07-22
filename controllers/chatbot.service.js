@@ -31,8 +31,10 @@ function requireConfirmation(actionName, details, isConfirmed) {
 async function getEmployeeProfile(user) {
     enforceRole(user, ['employee']);
     const [rows] = await db.execute(
-        `SELECT name, custom_id, department, salary_rate, salary_type, status, joined_date, shift, assigned_branch, phone, email, advance_balance 
-         FROM employees WHERE id = ? AND company_id = ?`,
+        `SELECT e.name, e.custom_id, e.department, e.salary_rate, e.salary_type, e.status, e.joined_date, e.shift, e.assigned_branch, e.phone, e.email, e.advance_balance, c.owner_name as manager_name, c.company_name
+         FROM employees e
+         LEFT JOIN companies c ON e.company_id = c.id
+         WHERE e.id = ? AND e.company_id = ?`,
         [user.employee_id, user.company_id]
     );
     return rows.length > 0 ? rows[0] : { error: "Profile not found." };
@@ -246,7 +248,7 @@ async function searchEmployees(user, args) {
     const query = args?.query || '';
     if (!query) {
         const [list] = await db.execute(
-            `SELECT custom_id, name, department, status, email, phone FROM employees 
+            `SELECT custom_id, name, department, status, email, phone, joined_date, role FROM employees 
              WHERE company_id = ? LIMIT 50`,
             [user.company_id]
         );
@@ -254,7 +256,7 @@ async function searchEmployees(user, args) {
     }
     const searchVal = `%${query}%`;
     const [list] = await db.execute(
-        `SELECT custom_id, name, department, status, email, phone FROM employees 
+        `SELECT custom_id, name, department, status, email, phone, joined_date, role FROM employees 
          WHERE company_id = ? AND (name LIKE ? OR custom_id LIKE ? OR department LIKE ?) LIMIT 20`,
         [user.company_id, searchVal, searchVal, searchVal]
     );
