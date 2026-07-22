@@ -384,12 +384,12 @@ function formatLocalResponse(toolName, result, context = {}) {
             case 'getPendingLeaves':
                 const pleaves = Array.isArray(result) ? result : [];
                 if (pleaves.length === 0) return "⏳ **Pending Leave Requests:** No pending leave requests found.";
-                return `⏳ **Pending Leave Requests:**\n` + pleaves.map(l => `- **ID ${l.id}**: ${l.employee_name} | Type: ${l.leave_type} | Duration: ${l.days ?? 0} days`).join('\n');
+                return `⏳ **Pending Leave Requests (${pleaves.length}):**\n` + pleaves.map(l => `- **ID ${l.id}**: **${l.employee_name}** | Type: ${l.leave_type} | Duration: ${l.days ?? 0} days (${l.start_date ? String(l.start_date).slice(0, 10) : ''} to ${l.end_date ? String(l.end_date).slice(0, 10) : ''}) [Reason: ${l.reason || 'None'}]`).join('\n');
 
             case 'getPendingClaims':
                 const pclaims = Array.isArray(result) ? result : [];
                 if (pclaims.length === 0) return "⏳ **Pending Expense Claims:** No pending expense claims found.";
-                return `⏳ **Pending Expense Claims:**\n` + pclaims.map(c => `- **ID ${c.id}**: ${c.employee_name} | Type: ${c.claim_type} | Amount: ${curr(c.amount ?? 0)}`).join('\n');
+                return `⏳ **Pending Expense Claims (${pclaims.length}):**\n` + pclaims.map(c => `- **ID ${c.id}**: **${c.employee_name}** | Type: ${c.claim_type} | Amount: ${curr(c.amount ?? 0)} (${c.expense_date ? String(c.expense_date).slice(0, 10) : ''}) [Desc: ${c.description || 'None'}]`).join('\n');
 
             case 'getKPIScores':
                 const kpis = Array.isArray(result) ? result : [];
@@ -399,10 +399,10 @@ function formatLocalResponse(toolName, result, context = {}) {
             case 'getGeofences':
                 const geos = Array.isArray(result) ? result : [];
                 if (geos.length === 0) return "🌐 **Office Geofences:** No office geofences configured.";
-                return `🌐 **Office Geofences:**\n` + geos.map(g => `- **${g.name}** (Radius: ${g.radius ?? 0}m) - Status: ${g.status}`).join('\n');
+                return `🌐 **Office Geofences:**\n` + geos.map(g => `- **${g.name}** (Radius: ${g.radius ?? 0}m) - Address: ${g.address ?? 'N/A'} [Status: ${g.status}]`).join('\n');
 
             case 'getCompanySettings':
-                return `⚙️ **Company Settings:**\n- **Business Name:** ${result.business_name ?? 'Not Available'}\n- **Salary Cycle:** ${result.salary_cycle ?? 'Monthly'}\n- **Currency:** ${result.currency ?? 'USD'}\n- **Timezone:** ${result.timezone ?? 'UTC'}`;
+                return `⚙️ **Company Settings:**\n- **Business Name:** ${result.business_name ?? 'Not Available'}\n- **Business Email:** ${result.business_email ?? 'N/A'}\n- **Salary Cycle:** ${result.salary_cycle ?? 'Monthly'}\n- **Working Hours:** ${result.standard_start_time ?? '09:00'} to ${result.standard_end_time ?? '17:00'}\n- **Currency:** ${result.currency ?? 'USD'}\n- **Timezone:** ${result.timezone ?? 'UTC'}`;
 
             // -- Superadmin Tools --
             case 'getSuperAdminStats':
