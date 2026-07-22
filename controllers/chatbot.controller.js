@@ -136,9 +136,9 @@ function formatCurrency(amount, currency = 'USD', locale = 'en-US') {
 // ─── LOCAL RESPONSE FORMATTER (ANTI-HALLUCINATION & INSTANT RENDERING) ───
 function formatLocalResponse(toolName, result, context = {}) {
     if (!result) return "No records found for your request.";
-    if (result.error) return `⚠️ ${result.error}`;
+    if (result.error) return `Error: ${result.error}`;
     if (result.status === 'CONFIRMATION_REQUIRED') return result.message;
-    if (result.status === 'SUCCESS') return `✅ ${result.message}`;
+    if (result.status === 'SUCCESS') return `Success: ${result.message}`;
     
     const currency = context.currency || 'USD';
     const locale = context.locale || 'en-US';
@@ -150,23 +150,23 @@ function formatLocalResponse(toolName, result, context = {}) {
             case 'getEmployeeProfile':
                 const userMsgProf = (context.userMessage || '').toLowerCase();
                 if (/\bid\b|custom\s*id|employee\s*id/i.test(userMsgProf)) {
-                    return `👤 Your Employee Custom ID is **${result.custom_id ?? 'N/A'}**.`;
+                    return `Your Employee Custom ID is **${result.custom_id ?? 'N/A'}**.`;
                 }
                 if (/name|my name|who am i|tell my name/i.test(userMsgProf)) {
-                    return `👤 Your name is **${result.name ?? 'Not Available'}**.`;
+                    return `Your name is **${result.name ?? 'Not Available'}**.`;
                 }
                 if (/join|joined|when did i/i.test(userMsgProf)) {
-                    return `📅 You joined the company on **${result.joined_date ? String(result.joined_date).slice(0, 10) : 'N/A'}**.`;
+                    return `You joined the company on **${result.joined_date ? String(result.joined_date).slice(0, 10) : 'N/A'}**.`;
                 }
                 if (/manager|owner|boss|head/i.test(userMsgProf)) {
-                    return `👔 Your manager / company admin is **${result.manager_name ?? 'Admin'}**.`;
+                    return `Your manager / company admin is **${result.manager_name ?? 'Admin'}**.`;
                 }
                 if (/status/i.test(userMsgProf)) {
-                    return `🟢 Your employment status is **${result.status ?? 'Active'}**.`;
+                    return `Your employment status is **${result.status ?? 'Active'}**.`;
                 }
 
                 const profLines = [
-                    `👤 **Employee Profile**`,
+                    `**Employee Profile**`,
                     `- **Name:** ${result.name ?? 'Not Available'}`,
                     `- **Custom ID:** ${result.custom_id ?? 'N/A'}`
                 ];
@@ -187,33 +187,29 @@ function formatLocalResponse(toolName, result, context = {}) {
                 const todayOut = result.today?.out_time ?? '--';
                 const m = result.monthSummary || {};
 
-                // 1. Specific Check-out query ("am I checked out today?", "check out time", "nikla", "out time")
                 if (/check(ed)?\s*out|out\s*time|checkout|gaya|nikla/i.test(userMsgAtt)) {
                     if (todayOut && todayOut !== '--') {
-                        return `✅ Yes, you have checked out today at **${todayOut}** (Clocked in: ${todayIn}, Total: ${result.today?.total_hours ?? 0} hrs).`;
+                        return `Yes, you have checked out today at **${todayOut}** (Clocked in: ${todayIn}, Total: ${result.today?.total_hours ?? 0} hrs).`;
                     } else if (todayIn && todayIn !== '--') {
-                        return `⏳ No, you are currently clocked in (since **${todayIn}**), but you have NOT checked out yet today (Total hours logged so far: ${result.today?.total_hours ?? 0} hrs).`;
+                        return `No, you are currently clocked in (since **${todayIn}**), but you have NOT checked out yet today (Total hours logged so far: ${result.today?.total_hours ?? 0} hrs).`;
                     } else {
-                        return `❌ No, you have not clocked in or checked out today.`;
+                        return `No, you have not clocked in or checked out today.`;
                     }
                 }
 
-                // 2. Specific Check-in / In-time query ("what time did I clock in?", "in time", "check in", "aaya")
                 if (/check\s*in|in\s*time|checkin|aaya|clock\s*in|login\s*time/i.test(userMsgAtt)) {
                     if (todayIn && todayIn !== '--') {
-                        return `⏱️ You clocked in today at **${todayIn}** (Status: ${todayStatus}).`;
+                        return `You clocked in today at **${todayIn}** (Status: ${todayStatus}).`;
                     } else {
-                        return `❌ You have not clocked in today.`;
+                        return `You have not clocked in today.`;
                     }
                 }
 
-                // 3. Today-only query ("today attendance", "aaj ki hajri")
                 if (/today|aaj/i.test(userMsgAtt)) {
-                    return `📋 **Today's Attendance:**\n- **Status:** ${todayStatus}\n- **In Time:** ${todayIn} | **Out Time:** ${todayOut}`;
+                    return `**Today's Attendance:**\n- **Status:** ${todayStatus}\n- **In Time:** ${todayIn} | **Out Time:** ${todayOut}`;
                 }
 
-                // 4. Default: Full summary if user asked for general attendance / monthly overview
-                return `📋 **Today's Attendance Status:**\n- **Status:** ${todayStatus}\n- **In Time:** ${todayIn} | **Out Time:** ${todayOut}\n\n📊 **This Month's Summary:**\n- ✅ **Present:** ${m.present ?? 0} days\n- ❌ **Absent:** ${m.absent ?? 0} days\n- ⚠️ **Late:** ${m.late ?? 0} days\n- ⏱️ **Total Hours:** ${m.total_hours ?? 0} hrs`;
+                return `**Today's Attendance Status:**\n- **Status:** ${todayStatus}\n- **In Time:** ${todayIn} | **Out Time:** ${todayOut}\n\n**This Month's Summary:**\n- **Present:** ${m.present ?? 0} days\n- **Absent:** ${m.absent ?? 0} days\n- **Late:** ${m.late ?? 0} days\n- **Total Hours:** ${m.total_hours ?? 0} hrs`;
 
             case 'getEmployeeSalary':
                 const userMsgSal = (context.userMessage || '').toLowerCase();
@@ -224,87 +220,85 @@ function formatLocalResponse(toolName, result, context = {}) {
                 const uifDed = calc.uifDeduction ?? 0;
 
                 if (/net|kitna milega|hath me|hand|payout/i.test(userMsgSal)) {
-                    return `💵 Your net salary accrued so far this month is **${curr(netSal)}** (after deductions).`;
+                    return `Your net salary accrued so far this month is **${curr(netSal)}** (after deductions).`;
                 }
 
-                return `💰 **Salary Accrual (Current Month):**\n- **Gross Earnings:** ${curr(grossEar)}\n- **Advance Deductions:** ${curr(advDed)}\n- **Tax/UIF Deductions:** ${curr(uifDed)}\n- 💵 **Net Salary So Far:** ${curr(netSal)}`;
+                return `**Salary Accrual (Current Month):**\n- **Gross Earnings:** ${curr(grossEar)}\n- **Advance Deductions:** ${curr(advDed)}\n- **Tax/UIF Deductions:** ${curr(uifDed)}\n- **Net Salary So Far:** ${curr(netSal)}`;
 
             case 'getEmployeeLeaves':
                 const userMsgLeave = (context.userMessage || '').toLowerCase();
                 const bal = result.balances;
                 const hist = Array.isArray(result.history) ? result.history : [];
 
-                // 1. Direct conversational leave inquiry ("mai aaj chutti maar lu ?", "can I take leave", "chutti le lu", "chutti apply")
                 if (/chutti\s*m[aa]*r|chutti\s*le|take\s*leave|apply|chutti\s*apply|aaj\s*chutti|leave\s*today/i.test(userMsgLeave)) {
-                    return `📝 Aap portal me **Leave Request** apply kar sakte hain! Dashboard me jaakar Leave Request submit kar dijiye (Annual, Sick, Emergency, ya Unpaid select karke). Submit hone ke baad aapka Admin/Manager use review karke approve kar dega.`;
+                    return `Aap portal me **Leave Request** apply kar sakte hain! Dashboard me jaakar Leave Request submit kar dijiye (Annual, Sick, Emergency, ya Unpaid select karke). Submit hone ke baad aapka Admin/Manager use review karke approve kar dega.`;
                 }
 
-                // 2. Specific balance check ("how many leaves", "leave balance", "kitni chutti bachi hai")
                 if (/balance|remaining|left|kitni chutti|kitna leave|available/i.test(userMsgLeave)) {
                     if (bal && (bal.annual != null || bal.sick != null)) {
-                        return `🏖️ **Your Current Leave Balances:**\n- **Annual:** ${bal.annual ?? 0} days\n- **Sick:** ${bal.sick ?? 0} days\n- **Emergency:** ${bal.emergency ?? 0} days\n- **Unpaid:** ${bal.unpaid ?? 0} days`;
+                        return `**Your Current Leave Balances:**\n- **Annual:** ${bal.annual ?? 0} days\n- **Sick:** ${bal.sick ?? 0} days\n- **Emergency:** ${bal.emergency ?? 0} days\n- **Unpaid:** ${bal.unpaid ?? 0} days`;
                     } else {
-                        return `📝 Aapki company me leaves direct application & Admin approval model par chalti hain. Aap Portal par jaakar kisbhi tarah ki chutti apply kar sakte hain, jise Admin approve karega.`;
+                        return `Aapki company me leaves direct application & Admin approval model par chalti hain. Aap Portal par jaakar kisbhi tarah ki chutti apply kar sakte hain, jise Admin approve karega.`;
                     }
                 }
 
                 const histStr = hist.length === 0 ? "No recent leave applications found." : hist.map(h => `- ${h.leave_type}: ${h.days ?? 0} days (${h.status ?? 'N/A'})`).join('\n');
 
                 if (bal && (bal.annual != null || bal.sick != null)) {
-                    return `🏖️ **Leave Balance:**\n- **Annual:** ${bal.annual ?? 0} days\n- **Sick:** ${bal.sick ?? 0} days\n- **Emergency:** ${bal.emergency ?? 0} days\n- **Unpaid:** ${bal.unpaid ?? 0} days\n\n📜 **Recent Leave Applications:**\n${histStr}`;
+                    return `**Leave Balance:**\n- **Annual:** ${bal.annual ?? 0} days\n- **Sick:** ${bal.sick ?? 0} days\n- **Emergency:** ${bal.emergency ?? 0} days\n- **Unpaid:** ${bal.unpaid ?? 0} days\n\n**Recent Leave Applications:**\n${histStr}`;
                 } else {
-                    return `🏖️ **Leave Applications & History:**\nAap Portal se kisi bhi time leave apply kar sakte hain (Admin approval ke sath).\n\n📜 **Recent Leave Applications:**\n${histStr}`;
+                    return `**Leave Applications & History:**\nAap Portal se kisi bhi time leave apply kar sakte hain (Admin approval ke sath).\n\n**Recent Leave Applications:**\n${histStr}`;
                 }
 
             case 'getEmployeeClaims':
                 const claims = Array.isArray(result) ? result : [];
-                if (claims.length === 0) return "🧾 **Expense Claims:** No expense claims found.";
-                return `🧾 **Expense Claims:**\n` + claims.map(c => `- **${c.claim_type}**: ${curr(c.amount)} on ${c.expense_date ? String(c.expense_date).slice(0, 10) : 'N/A'} [Status: ${c.status}]`).join('\n');
+                if (claims.length === 0) return "**Expense Claims:** No expense claims found.";
+                return `**Expense Claims:**\n` + claims.map(c => `- **${c.claim_type}**: ${curr(c.amount)} on ${c.expense_date ? String(c.expense_date).slice(0, 10) : 'N/A'} [Status: ${c.status}]`).join('\n');
 
             case 'getEmployeeKPIs':
-                return `📈 **KPI Scores:**\n- **Overall Score:** ${result.overall_score ?? 0}%\n- **Attendance Score:** ${result.attendance_score ?? 0}%\n- **Task Performance:** ${result.task_score ?? 0}%\n- **Rating:** ${result.rating ?? 'Not Available'}`;
+                return `**KPI Scores:**\n- **Overall Score:** ${result.overall_score ?? 0}%\n- **Attendance Score:** ${result.attendance_score ?? 0}%\n- **Task Performance:** ${result.task_score ?? 0}%\n- **Rating:** ${result.rating ?? 'Not Available'}`;
 
             case 'getBranchGeofence':
-                return `📍 **Assigned Office Geofence:**\n- **Branch Name:** ${result.name ?? 'Not Assigned'}\n- **Address:** ${result.address ?? 'Not Available'}\n- **Radius:** ${result.radius ?? 0} meters`;
+                return `**Assigned Office Geofence:**\n- **Branch Name:** ${result.name ?? 'Not Assigned'}\n- **Address:** ${result.address ?? 'Not Available'}\n- **Radius:** ${result.radius ?? 0} meters`;
 
             case 'getCompanyHolidays':
                 const hols = Array.isArray(result) ? result : [];
-                if (hols.length === 0) return "🎉 **Company Holidays:** No upcoming holidays found.";
-                return `🎉 **Upcoming Company Holidays:**\n` + hols.map(h => `- **${h.holiday_name}**: ${h.holiday_date ? String(h.holiday_date).slice(0, 10) : 'N/A'}`).join('\n');
+                if (hols.length === 0) return "**Company Holidays:** No upcoming holidays found.";
+                return `**Upcoming Company Holidays:**\n` + hols.map(h => `- **${h.holiday_name}**: ${h.holiday_date ? String(h.holiday_date).slice(0, 10) : 'N/A'}`).join('\n');
                 
             // -- Admin Tools --
             case 'getCompanyInfo':
-                return `🏢 **Company Information:**\n- **Company Name:** ${result.company_name ?? 'Not Available'}\n- **Owner:** ${result.owner_name ?? 'Not Available'}\n- **Plan:** ${result.plan ?? 'Not Available'}\n- **Status:** ${result.status ?? 'Active'}\n- **Employee Limit:** ${result.employee_limit ?? 'Unlimited'}`;
+                return `**Company Information:**\n- **Company Name:** ${result.company_name ?? 'Not Available'}\n- **Owner:** ${result.owner_name ?? 'Not Available'}\n- **Plan:** ${result.plan ?? 'Not Available'}\n- **Status:** ${result.status ?? 'Active'}\n- **Employee Limit:** ${result.employee_limit ?? 'Unlimited'}`;
 
             case 'getEmployeeStats':
                 const userMsgStats = (context.userMessage || '').toLowerCase();
                 if (/active\s*employee|how many active/i.test(userMsgStats)) {
-                    return `👥 There are **${result.active ?? 0}** active employees in your company (out of ${result.total ?? 0} total).`;
+                    return `There are **${result.active ?? 0}** active employees in your company (out of ${result.total ?? 0} total).`;
                 }
                 if (/inactive|on\s*leave/i.test(userMsgStats)) {
-                    return `👥 There are **${result.on_leave ?? 0}** employees currently on leave / inactive.`;
+                    return `There are **${result.on_leave ?? 0}** employees currently on leave / inactive.`;
                 }
                 if (/how many employee|total employee|count/i.test(userMsgStats)) {
-                    return `👥 Your company currently has **${result.total ?? 0}** total employees (${result.active ?? 0} active, ${result.on_leave ?? 0} on leave).`;
+                    return `Your company currently has **${result.total ?? 0}** total employees (${result.active ?? 0} active, ${result.on_leave ?? 0} on leave).`;
                 }
-                return `👥 **Company Employee Statistics:**\n- **Total Employees:** ${result.total ?? 0}\n- **Active Employees:** ${result.active ?? 0}\n- **On Leave:** ${result.on_leave ?? 0}`;
+                return `**Company Employee Statistics:**\n- **Total Employees:** ${result.total ?? 0}\n- **Active Employees:** ${result.active ?? 0}\n- **On Leave:** ${result.on_leave ?? 0}`;
 
             case 'searchEmployees':
                 const userMsgSearch = (context.userMessage || '').toLowerCase();
                 const emps = Array.isArray(result) ? result : [];
-                if (emps.length === 0) return "🔍 **Search Results:** No matching employees found.";
+                if (emps.length === 0) return "**Search Results:** No matching employees found.";
                 
                 if (/join|joined|when did/i.test(userMsgSearch)) {
-                    return `📅 ` + emps.map(e => `**${e.name}** joined on **${e.joined_date ? String(e.joined_date).slice(0, 10) : 'N/A'}**`).join('\n');
+                    return `` + emps.map(e => `**${e.name}** joined on **${e.joined_date ? String(e.joined_date).slice(0, 10) : 'N/A'}**`).join('\n');
                 }
 
-                return `🔍 **Employee Search Results:**\n` + emps.map(e => {
+                return `**Employee Search Results:**\n` + emps.map(e => {
                     const deptStr = (e.department && e.department !== 'General' && e.department !== 'Not Available') ? ` - Dept: ${e.department}` : '';
                     return `- **${e.name}** (ID: ${e.custom_id ?? 'N/A'})${deptStr} [Status: ${e.status ?? 'Active'}]`;
                 }).join('\n');
 
             case 'checkSpecificEmployeeAttendance':
-                if (result.error) return `⚠️ ${result.error}`;
+                if (result.error) return `Notice: ${result.error}`;
                 const userMsgEmpAtt = (context.userMessage || '').toLowerCase();
                 const empName = result.employee_name || 'Employee';
                 const todayAtt = result.today_attendance;
@@ -313,49 +307,44 @@ function formatLocalResponse(toolName, result, context = {}) {
                 const inT = todayAtt?.in_time ?? '--';
                 const outT = todayAtt?.out_time ?? '--';
 
-                // 1. Check-out query ("did Rahul check out?", "Rahul checkout time")
                 if (/check(ed)?\s*out|out\s*time|checkout|gaya|nikla/i.test(userMsgEmpAtt)) {
                     if (outT && outT !== '--') {
-                        return `✅ Yes, **${empName}** checked out today at **${outT}**.`;
+                        return `Yes, **${empName}** checked out today at **${outT}**.`;
                     } else if (inT && inT !== '--') {
-                        return `⏳ No, **${empName}** is clocked in (since **${inT}**), but has NOT checked out yet today.`;
+                        return `No, **${empName}** is clocked in (since **${inT}**), but has NOT checked out yet today.`;
                     } else {
-                        return `❌ **${empName}** has not clocked in or checked out today.`;
+                        return `**${empName}** has not clocked in or checked out today.`;
                     }
                 }
 
-                // 2. Present / Check-in query ("Is Rahul present today?", "Did Rahul check in today?")
                 if (/present|check(ed)?\s*in|in\s*time|checkin|aaya|present today/i.test(userMsgEmpAtt) && !/absent|late|monthly/i.test(userMsgEmpAtt)) {
                     if (todayAtt && (todayAtt.status === 'present' || todayAtt.status === 'late' || todayAtt.status === 'half_day')) {
-                        return `✅ Yes, **${empName}** is present today (Clocked in at **${inT}**, Status: ${todayAtt.status.toUpperCase()}).`;
+                        return `Yes, **${empName}** is present today (Clocked in at **${inT}**, Status: ${todayAtt.status.toUpperCase()}).`;
                     } else {
-                        return `❌ No, **${empName}** is absent / has not clocked in today.`;
+                        return `No, **${empName}** is absent / has not clocked in today.`;
                     }
                 }
 
-                // 3. Absent query ("How many days was Rahul absent?", "Is Rahul absent?")
                 if (/absent/i.test(userMsgEmpAtt) && !/monthly|summary/i.test(userMsgEmpAtt)) {
                     if (/how many|days|count/i.test(userMsgEmpAtt)) {
-                        return `❌ **${empName}** has been absent for **${mStats.absent ?? 0}** days this month.`;
+                        return `**${empName}** has been absent for **${mStats.absent ?? 0}** days this month.`;
                     }
                     if (todayAtt && todayAtt.status === 'present') {
-                        return `✅ No, **${empName}** is present today (Clocked in at **${inT}**).`;
+                        return `No, **${empName}** is present today (Clocked in at **${inT}**).`;
                     } else {
-                        return `❌ Yes, **${empName}** is absent / has not clocked in today.`;
+                        return `Yes, **${empName}** is absent / has not clocked in today.`;
                     }
                 }
 
-                // 4. Late query ("Show Rahul's late records", "Is Rahul late?")
                 if (/late/i.test(userMsgEmpAtt) && !/monthly|summary/i.test(userMsgEmpAtt)) {
-                    return `⚠️ **${empName}** has **${mStats.late ?? 0}** late check-ins this month (Today's status: ${statusStr}).`;
+                    return `**${empName}** has **${mStats.late ?? 0}** late check-ins this month (Today's status: ${statusStr}).`;
                 }
 
-                // 5. Monthly summary ("Show Rahul's monthly attendance")
                 if (/monthly|month|history|summary/i.test(userMsgEmpAtt)) {
-                    return `📊 **Monthly Attendance for ${empName}:**\n- ✅ **Present:** ${mStats.present ?? 0} days\n- ❌ **Absent:** ${mStats.absent ?? 0} days\n- ⚠️ **Late:** ${mStats.late ?? 0} days\n- ⏱️ **Total Hours:** ${mStats.total_hours ?? 0} hrs`;
+                    return `**Monthly Attendance for ${empName}:**\n- **Present:** ${mStats.present ?? 0} days\n- **Absent:** ${mStats.absent ?? 0} days\n- **Late:** ${mStats.late ?? 0} days\n- **Total Hours:** ${mStats.total_hours ?? 0} hrs`;
                 }
 
-                return `👤 **Attendance Status for ${empName}:**\n- **Today's Status:** ${statusStr}\n- **Clock In:** ${inT} | **Clock Out:** ${outT}\n- **Monthly Present:** ${mStats.present ?? 0} days | **Absent:** ${mStats.absent ?? 0} days | **Late:** ${mStats.late ?? 0} days`;
+                return `**Attendance Status for ${empName}:**\n- **Today's Status:** ${statusStr}\n- **Clock In:** ${inT} | **Clock Out:** ${outT}\n- **Monthly Present:** ${mStats.present ?? 0} days | **Absent:** ${mStats.absent ?? 0} days | **Late:** ${mStats.late ?? 0} days`;
 
             case 'getTodayAttendanceSummary':
                 const userMsgSum = (context.userMessage || '').toLowerCase();
@@ -364,19 +353,19 @@ function formatLocalResponse(toolName, result, context = {}) {
                 const listStr = list.length === 0 ? "None (All present)" : list.map(e => `${e.name} (${e.status || 'Absent'})`).join(', ');
 
                 if (/who is absent|who came late|late coming|who is late/i.test(userMsgSum)) {
-                    return `⚠️ **Late / Absent Employees Today:** ${listStr}`;
+                    return `**Late / Absent Employees Today:** ${listStr}`;
                 }
                 if (/how many present|present count|present today/i.test(userMsgSum)) {
-                    return `✅ **${st.present ?? 0}** employees are present today (out of ${st.total ?? 0} total).`;
+                    return `**${st.present ?? 0}** employees are present today (out of ${st.total ?? 0} total).`;
                 }
                 if (/how many absent|absent count/i.test(userMsgSum)) {
-                    return `❌ **${st.absent ?? 0}** employees are absent today.`;
+                    return `**${st.absent ?? 0}** employees are absent today.`;
                 }
 
-                return `📊 **Today's Attendance Overview:**\n- **Total Employees:** ${st.total ?? 0}\n- ✅ **Present:** ${st.present ?? 0}\n- ❌ **Absent:** ${st.absent ?? 0}\n- ⚠️ **Late:** ${st.late ?? 0}\n\n⚠️ **Late/Absent Employee List:**\n${listStr}`;
+                return `**Today's Attendance Overview:**\n- **Total Employees:** ${st.total ?? 0}\n- **Present:** ${st.present ?? 0}\n- **Absent:** ${st.absent ?? 0}\n- **Late:** ${st.late ?? 0}\n\n**Late/Absent Employee List:**\n${listStr}`;
 
             case 'getMonthlyAttendanceSummary':
-                return `📅 **Monthly Attendance Overview:**\n- **Total Attendance Records:** ${result.total_records ?? 0}\n- **Unique Employees Active:** ${result.unique_employees ?? 0}\n- ⏱️ **Total Hours Logged:** ${result.total_hours ?? 0} hrs`;
+                return `**Monthly Attendance Overview:**\n- **Total Attendance Records:** ${result.total_records ?? 0}\n- **Unique Employees Active:** ${result.unique_employees ?? 0}\n- **Total Hours Logged:** ${result.total_hours ?? 0} hrs`;
 
             case 'getPayrollOverview':
                 const curP = result.current || {};
@@ -385,64 +374,62 @@ function formatLocalResponse(toolName, result, context = {}) {
                 
                 if (curTotal > 0) {
                     const cycleStr = curP.cycle_start && curP.cycle_end ? `${String(curP.cycle_start).slice(0, 10)} to ${String(curP.cycle_end).slice(0, 10)}` : 'Current Month';
-                    return `💵 **Payroll Overview (${cycleStr}):**\n- **Total Net Payout:** ${curr(curP.total_payout ?? 0)}\n- ✅ **Paid Count:** ${curP.paid_count ?? 0}\n- ⏳ **Pending Count:** ${curP.pending_count ?? 0}\n\n📊 **All-Time History:** ${allP.total_records ?? 0} records (${curr(allP.total_payout ?? 0)} total payout).`;
+                    return `**Payroll Overview (${cycleStr}):**\n- **Total Net Payout:** ${curr(curP.total_payout ?? 0)}\n- **Paid Count:** ${curP.paid_count ?? 0}\n- **Pending Count:** ${curP.pending_count ?? 0}\n\n**All-Time History:** ${allP.total_records ?? 0} records (${curr(allP.total_payout ?? 0)} total payout).`;
                 } else {
-                    return `💵 **Current Month Payroll Overview:**\n- **Total Net Payout:** ${curr(0)}\n- **Status:** No payroll generated for current month cycle yet.\n\n📊 **All-Time History:** ${allP.total_records ?? 0} records (${curr(allP.total_payout ?? 0)} total historical payout, ${allP.paid_count ?? 0} paid, ${allP.pending_count ?? 0} pending).`;
+                    return `**Current Month Payroll Overview:**\n- **Total Net Payout:** ${curr(0)}\n- **Status:** No payroll generated for current month cycle yet.\n\n**All-Time History:** ${allP.total_records ?? 0} records (${curr(allP.total_payout ?? 0)} total historical payout, ${allP.paid_count ?? 0} paid, ${allP.pending_count ?? 0} pending).`;
                 }
 
             case 'getPendingLeaves':
                 const pleaves = Array.isArray(result) ? result : [];
-                if (pleaves.length === 0) return "⏳ **Pending Leave Requests:** No pending leave requests found.";
-                return `⏳ **Pending Leave Requests (${pleaves.length}):**\n` + pleaves.map(l => `- **ID ${l.id}**: **${l.employee_name}** | Type: ${l.leave_type} | Duration: ${l.days ?? 0} days (${l.start_date ? String(l.start_date).slice(0, 10) : ''} to ${l.end_date ? String(l.end_date).slice(0, 10) : ''}) [Reason: ${l.reason || 'None'}]`).join('\n');
+                if (pleaves.length === 0) return "**Pending Leave Requests:** No pending leave requests found.";
+                return `**Pending Leave Requests (${pleaves.length}):**\n` + pleaves.map(l => `- **ID ${l.id}**: **${l.employee_name}** | Type: ${l.leave_type} | Duration: ${l.days ?? 0} days (${l.start_date ? String(l.start_date).slice(0, 10) : ''} to ${l.end_date ? String(l.end_date).slice(0, 10) : ''}) [Reason: ${l.reason || 'None'}]`).join('\n');
 
             case 'getPendingClaims':
                 const pclaims = Array.isArray(result) ? result : [];
-                if (pclaims.length === 0) return "⏳ **Pending Expense Claims:** No pending expense claims found.";
-                return `⏳ **Pending Expense Claims (${pclaims.length}):**\n` + pclaims.map(c => `- **ID ${c.id}**: **${c.employee_name}** | Type: ${c.claim_type} | Amount: ${curr(c.amount ?? 0)} (${c.expense_date ? String(c.expense_date).slice(0, 10) : ''}) [Desc: ${c.description || 'None'}]`).join('\n');
+                if (pclaims.length === 0) return "**Pending Expense Claims:** No pending expense claims found.";
+                return `**Pending Expense Claims (${pclaims.length}):**\n` + pclaims.map(c => `- **ID ${c.id}**: **${c.employee_name}** | Type: ${c.claim_type} | Amount: ${curr(c.amount ?? 0)} (${c.expense_date ? String(c.expense_date).slice(0, 10) : ''}) [Desc: ${c.description || 'None'}]`).join('\n');
 
             case 'getKPIScores':
                 const kpis = Array.isArray(result) ? result : [];
-                if (kpis.length === 0) return "🏆 **Top KPI Scores:** No KPI records found.";
-                return `🏆 **Top KPI Scores:**\n` + kpis.map(k => `- **${k.employee_name}** (${k.department ?? 'N/A'}): ${k.overall_score ?? 0}% [Rating: ${k.rating ?? 'N/A'}]`).join('\n');
+                if (kpis.length === 0) return "**Top KPI Scores:** No KPI records found.";
+                return `**Top KPI Scores:**\n` + kpis.map(k => `- **${k.employee_name}** (${k.department ?? 'N/A'}): ${k.overall_score ?? 0}% [Rating: ${k.rating ?? 'N/A'}]`).join('\n');
 
             case 'getGeofences':
                 const geos = Array.isArray(result) ? result : [];
-                if (geos.length === 0) return "🌐 **Office Geofences:** No office geofences configured.";
-                return `🌐 **Office Geofences:**\n` + geos.map(g => `- **${g.name}** (Radius: ${g.radius ?? 0}m) - Address: ${g.address ?? 'N/A'} [Status: ${g.status}]`).join('\n');
+                if (geos.length === 0) return "**Office Geofences:** No office geofences configured.";
+                return `**Office Geofences:**\n` + geos.map(g => `- **${g.name}** (Radius: ${g.radius ?? 0}m) - Address: ${g.address ?? 'N/A'} [Status: ${g.status}]`).join('\n');
 
             case 'getCompanySettings':
-                return `⚙️ **Company Settings:**\n- **Business Name:** ${result.business_name ?? 'Not Available'}\n- **Business Email:** ${result.business_email ?? 'N/A'}\n- **Salary Cycle:** ${result.salary_cycle ?? 'Monthly'}\n- **Working Hours:** ${result.standard_start_time ?? '09:00'} to ${result.standard_end_time ?? '17:00'}\n- **Currency:** ${result.currency ?? 'USD'}\n- **Timezone:** ${result.timezone ?? 'UTC'}`;
+                return `**Company Settings:**\n- **Business Name:** ${result.business_name ?? 'Not Available'}\n- **Business Email:** ${result.business_email ?? 'N/A'}\n- **Salary Cycle:** ${result.salary_cycle ?? 'Monthly'}\n- **Working Hours:** ${result.standard_start_time ?? '09:00'} to ${result.standard_end_time ?? '17:00'}\n- **Currency:** ${result.currency ?? 'USD'}\n- **Timezone:** ${result.timezone ?? 'UTC'}`;
 
             // -- Superadmin Tools --
             case 'getSuperAdminStats':
-                return `👑 **Platform Overview:**\n- **Total Companies:** ${result.totalCompanies ?? 0}\n- **Active Subscriptions:** ${result.activeSubscriptions ?? 0}\n- **Total Revenue:** ${curr(result.totalRevenue ?? 0)}\n- ⏳ **Pending Plan Requests:** ${result.pendingPlanRequests ?? 0}`;
+                return `**Platform Overview:**\n- **Total Companies:** ${result.totalCompanies ?? 0}\n- **Active Subscriptions:** ${result.activeSubscriptions ?? 0}\n- **Total Revenue:** ${curr(result.totalRevenue ?? 0)}\n- **Pending Plan Requests:** ${result.pendingPlanRequests ?? 0}`;
 
             case 'getCompaniesList':
                 const userMsgComp = (context.userMessage || '').toLowerCase();
                 const comps = Array.isArray(result) ? result : [];
-                if (comps.length === 0) return "🏢 **Registered Companies:** No tenant companies found.";
+                if (comps.length === 0) return "**Registered Companies:** No tenant companies found.";
 
-                // 1. Employee names inquiry ("nexus company ke employees ka name batao", "employees name")
                 if (/name|naam|karmchari|list employee|who work/i.test(userMsgComp)) {
-                    return `🔒 **Tenant Data Privacy Notice:** As a SuperAdmin, you oversee platform operations and tenant management. Individual employee names and internal confidential records of a tenant company are isolated to that company's own HR Admin to protect data privacy.\n\n📊 **Company Employee Count:**\n` + comps.map(c => `- **${c.company_name}**: ${c.employee_count ?? 0} total employees`).join('\n');
+                    return `**Tenant Data Privacy Notice:** As a SuperAdmin, you oversee platform operations and tenant management. Individual employee names and internal confidential records of a tenant company are isolated to that company's own HR Admin to protect data privacy.\n\n**Company Employee Count:**\n` + comps.map(c => `- **${c.company_name}**: ${c.employee_count ?? 0} total employees`).join('\n');
                 }
 
-                // 2. Employee count inquiry ("is company mai kitne employee hai", "how many employees")
                 if (/kitne|kine|how many|count|kitna/i.test(userMsgComp)) {
-                    return `🏢 **Tenant Company Employee Counts:**\n` + comps.map(c => `- **${c.company_name}**: **${c.employee_count ?? 0}** total employees [Plan: ${c.plan ?? 'N/A'}, Status: ${c.status ?? 'Active'}]`).join('\n');
+                    return `**Tenant Company Employee Counts:**\n` + comps.map(c => `- **${c.company_name}**: **${c.employee_count ?? 0}** total employees [Plan: ${c.plan ?? 'N/A'}, Status: ${c.status ?? 'Active'}]`).join('\n');
                 }
 
-                return `🏢 **Recent Registered Companies:**\n` + comps.map(c => `- **${c.company_name}** (${c.employee_count ?? 0} employees) | Plan: ${c.plan ?? 'N/A'} | Status: ${c.status ?? 'Active'}`).join('\n');
+                return `**Recent Registered Companies:**\n` + comps.map(c => `- **${c.company_name}** (${c.employee_count ?? 0} employees) | Plan: ${c.plan ?? 'N/A'} | Status: ${c.status ?? 'Active'}`).join('\n');
 
             case 'getPlanRequests':
                 const reqs = Array.isArray(result) ? result : [];
-                if (reqs.length === 0) return "🔔 **Pending Plan Requests:** No pending plan requests.";
-                return `🔔 **Pending Plan Requests:**\n` + reqs.map(r => `- **ID ${r.id}**: Company: ${r.company_name} requested ${r.requested_plan}`).join('\n');
+                if (reqs.length === 0) return "**Pending Plan Requests:** No pending plan requests.";
+                return `**Pending Plan Requests:**\n` + reqs.map(r => `- **ID ${r.id}**: Company: ${r.company_name} requested ${r.requested_plan}`).join('\n');
 
             case 'getPlansList':
                 const plans = Array.isArray(result) ? result : [];
-                if (plans.length === 0) return "📦 **Subscription Plans:** No plans available.";
-                return `📦 **Available Subscription Plans:**\n` + plans.map(p => `- **${p.name}**: ${curr(p.price ?? 0)} / ${p.duration ?? 'monthly'}`).join('\n');
+                if (plans.length === 0) return "**Subscription Plans:** No plans available.";
+                return `**Available Subscription Plans:**\n` + plans.map(p => `- **${p.name}**: ${curr(p.price ?? 0)} / ${p.duration ?? 'monthly'}`).join('\n');
 
             case 'applyLeave':
             case 'submitClaim':
