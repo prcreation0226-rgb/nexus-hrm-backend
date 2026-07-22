@@ -127,14 +127,20 @@ function formatLocalResponse(toolName, result, context = {}) {
             // -- Employee Tools --
             case 'getEmployeeProfile':
                 const userMsgProf = (context.userMessage || '').toLowerCase();
-                if (/employee\s*id|my\s*id|custom\s*id/i.test(userMsgProf)) {
+                if (/\bid\b|custom\s*id|employee\s*id/i.test(userMsgProf)) {
                     return `👤 Your Employee Custom ID is **${result.custom_id ?? 'N/A'}**.`;
+                }
+                if (/name|my name|who am i|tell my name/i.test(userMsgProf)) {
+                    return `👤 Your name is **${result.name ?? 'Not Available'}**.`;
                 }
                 if (/join|joined|when did i/i.test(userMsgProf)) {
                     return `📅 You joined the company on **${result.joined_date ? String(result.joined_date).slice(0, 10) : 'N/A'}**.`;
                 }
                 if (/manager|owner|boss|head/i.test(userMsgProf)) {
                     return `👔 Your manager / company admin is **${result.manager_name ?? 'Admin'}**.`;
+                }
+                if (/status/i.test(userMsgProf)) {
+                    return `🟢 Your employment status is **${result.status ?? 'Active'}**.`;
                 }
 
                 const profLines = [
@@ -150,7 +156,6 @@ function formatLocalResponse(toolName, result, context = {}) {
                 }
                 profLines.push(`- **Status:** ${result.status ?? 'Active'}`);
                 profLines.push(`- **Joined Date:** ${result.joined_date ? String(result.joined_date).slice(0, 10) : 'N/A'}`);
-                profLines.push(`- **Shift:** ${result.shift ?? 'Standard'}`);
                 return profLines.join('\n');
 
             case 'getEmployeeAttendance':
