@@ -327,7 +327,7 @@ function formatLocalResponse(toolName, result, context = {}) {
                 const userMsgSum = (context.userMessage || '').toLowerCase();
                 const st = result.stats || {};
                 const list = Array.isArray(result.lateAbsentList) ? result.lateAbsentList : [];
-                const listStr = list.length === 0 ? "None (All present)" : list.map(e => e.name).join(', ');
+                const listStr = list.length === 0 ? "None (All present)" : list.map(e => `${e.name} (${e.status || 'Absent'})`).join(', ');
 
                 if (/who is absent|who came late|late coming|who is late/i.test(userMsgSum)) {
                     return `⚠️ **Late / Absent Employees Today:** ${listStr}`;

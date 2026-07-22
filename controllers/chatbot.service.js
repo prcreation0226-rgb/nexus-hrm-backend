@@ -291,22 +291,53 @@ async function checkSpecificEmployeeAttendance(user, args) {
 
 async function getTodayAttendanceSummary(user) {
     enforceRole(user, ['admin', 'hr admin']);
-    const [stats] = await db.execute(
-        `SELECT COUNT(*) as total,
-                COALESCE(SUM(CASE WHEN status='present' THEN 1 ELSE 0 END), 0) as present,
-                COALESCE(SUM(CASE WHEN status='absent' THEN 1 ELSE 0 END), 0) as absent,
-                COALESCE(SUM(CASE WHEN status='late' THEN 1 ELSE 0 END), 0) as late 
-         FROM attendance WHERE company_id = ? AND date = CURDATE()`,
+    
+    // Fetch all active employees
+    const [employees] = await db.execute(
+        `SELECT id, name, custom_id FROM employees WHERE company_id = ? AND status = 'active'`,
         [user.company_id]
     );
-    const [lateAbsentList] = await db.execute(
-        `SELECT e.name, a.status, a.in_time FROM attendance a 
-         JOIN employees e ON a.employee_id = e.id 
-         WHERE a.company_id = ? AND a.date = CURDATE() AND a.status IN ('absent', 'late') LIMIT 15`,
+
+    // Fetch today's logged attendance
+    const [todayRecords] = await db.execute(
+        `SELECT employee_id, status, in_time FROM attendance WHERE company_id = ? AND date = CURDATE()`,
         [user.company_id]
     );
+
+    const recordMap = new Map();
+    todayRecords.forEach(r => recordMap.set(r.employee_id, r));
+
+    let presentCount = 0;
+    let lateCount = 0;
+    let absentCount = 0;
+    const lateAbsentList = [];
+
+    employees.forEach(emp => {
+        const att = recordMap.get(emp.id);
+        const st = att ? (att.status || '').toLowerCase() : 'absent';
+        
+        if (st === 'present') {
+            presentCount++;
+        } else if (st === 'late') {
+            presentCount++;
+            lateCount++;
+            lateAbsentList.push({ name: emp.name, status: 'Late', in_time: att.in_time });
+        } else if (st === 'half_day') {
+            presentCount++;
+            lateAbsentList.push({ name: emp.name, status: 'Half Day', in_time: att.in_time });
+        } else {
+            absentCount++;
+            lateAbsentList.push({ name: emp.name, status: 'Absent', in_time: null });
+        }
+    });
+
     return {
-        stats: stats[0],
+        stats: {
+            total: employees.length,
+            present: presentCount,
+            absent: absentCount,
+            late: lateCount
+        },
         lateAbsentList
     };
 }
