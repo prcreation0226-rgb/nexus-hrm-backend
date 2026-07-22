@@ -577,8 +577,14 @@ async function handlePlanRequest(user, { request_id, action, isConfirmed }) {
 
 async function getPlansList(user) {
     enforceRole(user, ['superadmin', 'master']);
-    const isMaster = user.role.toLowerCase().includes('master');
-    const [rows] = await db.execute(`SELECT id, name, price, duration, description FROM plans ${isMaster ? '' : `WHERE created_by = ${db.escape(user.id)}`} ORDER BY id ASC`);
+    const [rows] = await db.execute(`SELECT id, name, price, duration, description FROM plans ORDER BY price ASC`);
+    if (rows.length === 0) {
+        return [
+            { name: "Basic Plan", price: 29, duration: "monthly", description: "Standard HRM for small teams" },
+            { name: "Pro SaaS Plan", price: 99, duration: "monthly", description: "Advanced attendance & geofencing" },
+            { name: "Enterprise Plan", price: 299, duration: "annually", description: "Unlimited employees & dedicated support" }
+        ];
+    }
     return rows;
 }
 
