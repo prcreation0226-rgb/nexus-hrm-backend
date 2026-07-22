@@ -126,7 +126,21 @@ function formatLocalResponse(toolName, result, context = {}) {
         switch(toolName) {
             // -- Employee Tools --
             case 'getEmployeeProfile':
-                return `👤 **Employee Profile**\n- **Name:** ${result.name ?? 'Not Available'}\n- **Custom ID:** ${result.custom_id ?? 'N/A'}\n- **Department:** ${result.department ?? 'Not Available'}\n- **Branch:** ${result.assigned_branch ?? 'Not Available'}\n- **Status:** ${result.status ?? 'Not Available'}\n- **Joined Date:** ${result.joined_date ? String(result.joined_date).slice(0, 10) : 'N/A'}\n- **Shift:** ${result.shift ?? 'Standard'}`;
+                const profLines = [
+                    `👤 **Employee Profile**`,
+                    `- **Name:** ${result.name ?? 'Not Available'}`,
+                    `- **Custom ID:** ${result.custom_id ?? 'N/A'}`
+                ];
+                if (result.department && result.department !== 'General' && result.department !== 'Not Available') {
+                    profLines.push(`- **Department:** ${result.department}`);
+                }
+                if (result.assigned_branch && result.assigned_branch !== 'Not Available' && result.assigned_branch !== 'General') {
+                    profLines.push(`- **Branch:** ${result.assigned_branch}`);
+                }
+                profLines.push(`- **Status:** ${result.status ?? 'Active'}`);
+                profLines.push(`- **Joined Date:** ${result.joined_date ? String(result.joined_date).slice(0, 10) : 'N/A'}`);
+                profLines.push(`- **Shift:** ${result.shift ?? 'Standard'}`);
+                return profLines.join('\n');
 
             case 'getEmployeeAttendance':
                 const todayStatus = result.today?.status ? result.today.status.toUpperCase() : 'No clock-in record today';
@@ -175,7 +189,10 @@ function formatLocalResponse(toolName, result, context = {}) {
             case 'searchEmployees':
                 const emps = Array.isArray(result) ? result : [];
                 if (emps.length === 0) return "🔍 **Search Results:** No matching employees found.";
-                return `🔍 **Employee Search Results:**\n` + emps.map(e => `- **${e.name}** (ID: ${e.custom_id ?? 'N/A'}) - Dept: ${e.department ?? 'N/A'} [Status: ${e.status ?? 'Active'}]`).join('\n');
+                return `🔍 **Employee Search Results:**\n` + emps.map(e => {
+                    const deptStr = (e.department && e.department !== 'General' && e.department !== 'Not Available') ? ` - Dept: ${e.department}` : '';
+                    return `- **${e.name}** (ID: ${e.custom_id ?? 'N/A'})${deptStr} [Status: ${e.status ?? 'Active'}]`;
+                }).join('\n');
 
             case 'checkSpecificEmployeeAttendance':
                 if (result.error) return `⚠️ ${result.error}`;
