@@ -492,8 +492,23 @@ exports.handleMessage = async (req, res) => {
         if (!isActionQuery) {
             const cachedVal = aiCache.get(cacheKey);
             if (cachedVal) {
-                return res.json({ text: cachedVal, cached: true });
+                return res.json({ response: cachedVal, cached: true });
             }
+        }
+
+        // ── Direct User Profile / Identity Handler for all Roles ──
+        if (/mera\s*name|mera\s*naam|my\s*name|who\s*am\s*i|tell\s*my\s*name|my\s*profile/i.test(message)) {
+            const uName = authUser?.name || 'User';
+            const uRole = authUser?.role || 'User';
+            const uEmail = authUser?.email || 'N/A';
+            const uId = authUser?.custom_id || authUser?.employee_id || authUser?.id || 'N/A';
+            const replyText = `Your name is **${uName}** (Role: ${uRole}, Email: ${uEmail}, ID: ${uId}).`;
+            return res.json({
+                response: replyText,
+                toolsUsed: ['getUserProfile'],
+                tokensUsed: 0,
+                responseTimeMs: Date.now() - requestStartTime
+            });
         }
 
         let systemPrompt = '';
