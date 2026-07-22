@@ -398,8 +398,10 @@ async function getPayrollOverview(user) {
 async function getPendingLeaves(user) {
     enforceRole(user, ['admin', 'hr admin']);
     const [leaves] = await db.execute(
-        `SELECT id, employee_name, leave_type, start_date, end_date, days, reason FROM leaves 
-         WHERE company_id = ? AND status = 'Pending' ORDER BY created_at DESC`,
+        `SELECT l.id, COALESCE(e.name, l.employee_name) as employee_name, l.leave_type, l.start_date, l.end_date, l.days, l.reason 
+         FROM leaves l 
+         LEFT JOIN employees e ON l.employee_id = e.id 
+         WHERE l.company_id = ? AND l.status = 'Pending' ORDER BY l.created_at DESC`,
         [user.company_id]
     );
     return leaves;
@@ -425,8 +427,10 @@ async function approveRejectLeave(user, { leave_id, action, isConfirmed }) {
 async function getPendingClaims(user) {
     enforceRole(user, ['admin', 'hr admin']);
     const [claims] = await db.execute(
-        `SELECT id, employee_name, claim_type, amount, expense_date, description FROM claims 
-         WHERE company_id = ? AND status = 'Pending' ORDER BY created_at DESC`,
+        `SELECT c.id, COALESCE(e.name, c.employee_name) as employee_name, c.claim_type, c.amount, c.expense_date, c.description 
+         FROM claims c 
+         LEFT JOIN employees e ON c.employee_id = e.id 
+         WHERE c.company_id = ? AND c.status = 'Pending' ORDER BY c.created_at DESC`,
         [user.company_id]
     );
     return claims;
@@ -452,8 +456,10 @@ async function approveRejectClaim(user, { claim_id, action, isConfirmed }) {
 async function getKPIScores(user) {
     enforceRole(user, ['admin', 'hr admin']);
     const [kpis] = await db.execute(
-        `SELECT employee_name, department, overall_score, rating FROM kpis 
-         WHERE company_id = ? ORDER BY overall_score DESC LIMIT 15`,
+        `SELECT COALESCE(e.name, k.employee_name) as employee_name, k.department, k.overall_score, k.rating 
+         FROM kpis k 
+         LEFT JOIN employees e ON k.employee_id = e.id 
+         WHERE k.company_id = ? ORDER BY k.overall_score DESC LIMIT 15`,
         [user.company_id]
     );
     return kpis;

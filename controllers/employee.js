@@ -269,8 +269,17 @@ exports.updateEmployee = async (req, res) => {
         const userUpdates = [];
         const userParams = [];
 
-        if (data.email) { userUpdates.push('email = ?'); userParams.push(data.email); }
-        if (data.name) { userUpdates.push('name = ?'); userParams.push(data.name); }
+        if (data.name) { 
+            userUpdates.push('name = ?'); 
+            userParams.push(data.name); 
+            try {
+                await db.execute('UPDATE kpis SET employee_name = ? WHERE employee_id = ?', [data.name, id]);
+                await db.execute('UPDATE leaves SET employee_name = ? WHERE employee_id = ?', [data.name, id]);
+                await db.execute('UPDATE claims SET employee_name = ? WHERE employee_id = ?', [data.name, id]);
+            } catch (e) {
+                console.warn('Failed to sync employee name to related tables:', e.message);
+            }
+        }
         if (photo) { userUpdates.push('photo = ?'); userParams.push(photo); }
         if (data.role) { userUpdates.push('role = ?'); userParams.push(isAdmin(data.role) ? data.role.toLowerCase() : 'employee'); }
 
