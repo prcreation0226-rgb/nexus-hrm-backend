@@ -95,10 +95,11 @@ const superadminTools = [
 
 async function generateContentFast(ai, params) {
     const modelsToTry = [
-        'gemini-1.5-flash',
-        'gemini-2.0-flash',
+        params.model || 'gemini-2.5-flash',
         'gemini-2.5-flash',
-        params.model
+        'gemini-2.0-flash',
+        'gemini-1.5-flash',
+        'gemini-1.5-pro'
     ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
     let lastError = null;
@@ -113,12 +114,8 @@ async function generateContentFast(ai, params) {
             lastError = err;
             const errMsg = err.message || JSON.stringify(err);
             console.warn(`[Gemini API Warning] Model '${modelCandidate}' failed: ${errMsg.slice(0, 150)}. Trying next fallback model...`);
-            if (errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand') || errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED')) {
-                await new Promise(r => setTimeout(r, 300));
-                continue;
-            } else {
-                throw err;
-            }
+            await new Promise(r => setTimeout(r, 200));
+            continue;
         }
     }
     throw lastError;
@@ -525,15 +522,16 @@ exports.handleMessage = async (req, res) => {
             else if (/branch location|geofence/i.test(lowerMsg)) directTool = 'getBranchGeofence';
             else if (/company holiday|holidays/i.test(lowerMsg)) directTool = 'getCompanyHolidays';
         } else if (normalizedRole === 'admin' || normalizedRole === 'hr admin') {
-            if (/today attendance overview|attendance overview|today attendance/i.test(lowerMsg)) directTool = 'getTodayAttendanceSummary';
+            if (/today attendance overview|attendance summary|today attendance/i.test(lowerMsg)) directTool = 'getTodayAttendanceSummary';
             else if (/who is absent|absent today|late coming/i.test(lowerMsg)) directTool = 'getTodayAttendanceSummary';
             else if (/present today count|present count|how many present/i.test(lowerMsg)) directTool = 'getTodayAttendanceSummary';
             else if (/monthly attendance summary|monthly summary/i.test(lowerMsg)) directTool = 'getMonthlyAttendanceSummary';
-            else if (/employee list|employee stats|company stats/i.test(lowerMsg)) directTool = 'getEmployeeStats';
+            else if (/employee list|total employees count|employee stats|company stats/i.test(lowerMsg)) directTool = 'getEmployeeStats';
             else if (/top kpi leaders|kpi leader|top kpi/i.test(lowerMsg)) directTool = 'getKPIScores';
-            else if (/pending leaves|pending leave/i.test(lowerMsg)) directTool = 'getPendingLeaves';
-            else if (/pending claims|pending claim/i.test(lowerMsg)) directTool = 'getPendingClaims';
+            else if (/pending leave requests|pending leaves|pending leave/i.test(lowerMsg)) directTool = 'getPendingLeaves';
+            else if (/pending expense claims|pending claims|pending claim/i.test(lowerMsg)) directTool = 'getPendingClaims';
             else if (/payroll overview|payroll summary/i.test(lowerMsg)) directTool = 'getPayrollOverview';
+            else if (/company info|company settings|settings/i.test(lowerMsg)) directTool = 'getCompanySettings';
         } else if (normalizedRole === 'superadmin' || normalizedRole.includes('master')) {
             if (/platform overview|platform stats|total revenue/i.test(lowerMsg)) directTool = 'getSuperAdminStats';
             else if (/registered companies|list companies/i.test(lowerMsg)) directTool = 'getCompaniesList';
