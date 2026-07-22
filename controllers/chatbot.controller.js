@@ -379,7 +379,16 @@ function formatLocalResponse(toolName, result, context = {}) {
                 return `📅 **Monthly Attendance Overview:**\n- **Total Attendance Records:** ${result.total_records ?? 0}\n- **Unique Employees Active:** ${result.unique_employees ?? 0}\n- ⏱️ **Total Hours Logged:** ${result.total_hours ?? 0} hrs`;
 
             case 'getPayrollOverview':
-                return `💵 **Payroll Overview:**\n- **Total Records:** ${result.total_records ?? 0}\n- ✅ **Paid Count:** ${result.paid_count ?? 0}\n- ⏳ **Pending Count:** ${result.pending_count ?? 0}\n- 💰 **Total Payout:** ${curr(result.total_payout ?? 0)}`;
+                const curP = result.current || {};
+                const allP = result.allTime || {};
+                const curTotal = curP.total_records ?? 0;
+                
+                if (curTotal > 0) {
+                    const cycleStr = curP.cycle_start && curP.cycle_end ? `${String(curP.cycle_start).slice(0, 10)} to ${String(curP.cycle_end).slice(0, 10)}` : 'Current Month';
+                    return `💵 **Payroll Overview (${cycleStr}):**\n- **Total Net Payout:** ${curr(curP.total_payout ?? 0)}\n- ✅ **Paid Count:** ${curP.paid_count ?? 0}\n- ⏳ **Pending Count:** ${curP.pending_count ?? 0}\n\n📊 **All-Time History:** ${allP.total_records ?? 0} records (${curr(allP.total_payout ?? 0)} total payout).`;
+                } else {
+                    return `💵 **Current Month Payroll Overview:**\n- **Total Net Payout:** ${curr(0)}\n- **Status:** No payroll generated for current month cycle yet.\n\n📊 **All-Time History:** ${allP.total_records ?? 0} records (${curr(allP.total_payout ?? 0)} total historical payout, ${allP.paid_count ?? 0} paid, ${allP.pending_count ?? 0} pending).`;
+                }
 
             case 'getPendingLeaves':
                 const pleaves = Array.isArray(result) ? result : [];

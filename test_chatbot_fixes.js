@@ -74,8 +74,8 @@ async function runTests() {
     let t15 = formatLocalResponse('getMonthlyAttendanceSummary', { total_records: 400, total_hours: 1600 }, {});
     assert(t15.includes("400") && t15.includes("1600 hrs"), "getMonthlyAttendanceSummary formats hours");
 
-    let t16 = formatLocalResponse('getPayrollOverview', { total_records: null, total_payout: 50000 }, { currency: 'USD' });
-    assert(t16.includes("Total Payout:") && t16.includes("$50,000.00"), "getPayrollOverview handles null total_records gracefully");
+    let t16 = formatLocalResponse('getPayrollOverview', { current: { total_records: 0 }, allTime: { total_records: 4, total_payout: 50000 } }, { currency: 'USD' });
+    assert(t16.includes("All-Time History:") && t16.includes("$50,000.00"), "getPayrollOverview handles null total_records gracefully");
 
     let t17 = formatLocalResponse('getPendingLeaves', [], {});
     assert(t17.includes("No pending leave requests found"), "getPendingLeaves anti-hallucination empty state");

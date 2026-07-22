@@ -365,7 +365,22 @@ async function getMonthlyAttendanceSummary(user) {
 
 async function getPayrollOverview(user) {
     enforceRole(user, ['admin', 'hr admin']);
-    const [stats] = await db.execute(
+    
+    // 1. Current Month / Active Cycle Payroll
+    const [currentCycle] = await db.execute(
+        `SELECT COUNT(*) as total_records,
+                COALESCE(SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END), 0) as paid_count,
+                COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END), 0) as pending_count,
+                ROUND(COALESCE(SUM(net_salary), 0), 2) as total_payout,
+                MIN(cycle_start) as cycle_start,
+                MAX(cycle_end) as cycle_end
+         FROM payroll 
+         WHERE company_id = ? AND MONTH(generated_at) = MONTH(CURDATE()) AND YEAR(generated_at) = YEAR(CURDATE())`,
+        [user.company_id]
+    );
+
+    // 2. All-Time Historical Payroll
+    const [allTime] = await db.execute(
         `SELECT COUNT(*) as total_records,
                 COALESCE(SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END), 0) as paid_count,
                 COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END), 0) as pending_count,
@@ -373,7 +388,11 @@ async function getPayrollOverview(user) {
          FROM payroll WHERE company_id = ?`,
         [user.company_id]
     );
-    return stats[0];
+
+    return {
+        current: currentCycle[0],
+        allTime: allTime[0]
+    };
 }
 
 async function getPendingLeaves(user) {
