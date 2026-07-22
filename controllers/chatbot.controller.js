@@ -332,7 +332,7 @@ function formatLocalResponse(toolName, result, context = {}) {
                 if (/who is absent|who came late|late coming|who is late/i.test(userMsgSum)) {
                     return `⚠️ **Late / Absent Employees Today:** ${listStr}`;
                 }
-                if (/how many present|present count/i.test(userMsgSum)) {
+                if (/how many present|present count|present today/i.test(userMsgSum)) {
                     return `✅ **${st.present ?? 0}** employees are present today (out of ${st.total ?? 0} total).`;
                 }
                 if (/how many absent|absent count/i.test(userMsgSum)) {
