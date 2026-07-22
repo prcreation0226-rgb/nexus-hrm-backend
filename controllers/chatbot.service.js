@@ -510,7 +510,8 @@ async function getCompaniesList(user) {
     enforceRole(user, ['superadmin', 'master']);
     const isMaster = user.role.toLowerCase().includes('master');
     const [rows] = await db.execute(`
-        SELECT c.id, c.company_name, c.owner_name, c.email, c.plan, c.status, c.created_at
+        SELECT c.id, c.company_name, c.owner_name, c.email, c.plan, c.status, c.created_at,
+               (SELECT COUNT(*) FROM employees e WHERE e.company_id = c.id) as employee_count
         FROM companies c
         ${isMaster ? '' : `WHERE c.created_by = ${db.escape(user.id)}`}
         ORDER BY c.created_at DESC LIMIT 20

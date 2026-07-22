@@ -418,9 +418,21 @@ function formatLocalResponse(toolName, result, context = {}) {
                 return `👑 **Platform Overview:**\n- **Total Companies:** ${result.totalCompanies ?? 0}\n- **Active Subscriptions:** ${result.activeSubscriptions ?? 0}\n- **Total Revenue:** ${curr(result.totalRevenue ?? 0)}\n- ⏳ **Pending Plan Requests:** ${result.pendingPlanRequests ?? 0}`;
 
             case 'getCompaniesList':
+                const userMsgComp = (context.userMessage || '').toLowerCase();
                 const comps = Array.isArray(result) ? result : [];
                 if (comps.length === 0) return "🏢 **Registered Companies:** No tenant companies found.";
-                return `🏢 **Recent Registered Companies:**\n` + comps.map(c => `- **${c.company_name}** | Plan: ${c.plan ?? 'N/A'} | Status: ${c.status ?? 'Active'}`).join('\n');
+
+                // 1. Employee names inquiry ("nexus company ke employees ka name batao", "employees name")
+                if (/name|naam|karmchari|list employee|who work/i.test(userMsgComp)) {
+                    return `🔒 **Tenant Data Privacy Notice:** As a SuperAdmin, you oversee platform operations and tenant management. Individual employee names and internal confidential records of a tenant company are isolated to that company's own HR Admin to protect data privacy.\n\n📊 **Company Employee Count:**\n` + comps.map(c => `- **${c.company_name}**: ${c.employee_count ?? 0} total employees`).join('\n');
+                }
+
+                // 2. Employee count inquiry ("is company mai kitne employee hai", "how many employees")
+                if (/kitne|kine|how many|count|kitna/i.test(userMsgComp)) {
+                    return `🏢 **Tenant Company Employee Counts:**\n` + comps.map(c => `- **${c.company_name}**: **${c.employee_count ?? 0}** total employees [Plan: ${c.plan ?? 'N/A'}, Status: ${c.status ?? 'Active'}]`).join('\n');
+                }
+
+                return `🏢 **Recent Registered Companies:**\n` + comps.map(c => `- **${c.company_name}** (${c.employee_count ?? 0} employees) | Plan: ${c.plan ?? 'N/A'} | Status: ${c.status ?? 'Active'}`).join('\n');
 
             case 'getPlanRequests':
                 const reqs = Array.isArray(result) ? result : [];
