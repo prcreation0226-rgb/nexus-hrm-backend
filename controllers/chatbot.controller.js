@@ -95,10 +95,10 @@ const superadminTools = [
 
 async function generateContentFast(ai, params) {
     const modelsToTry = [
-        params.model,
-        'gemini-2.5-flash',
         'gemini-1.5-flash',
-        'gemini-2.0-flash'
+        'gemini-2.0-flash',
+        'gemini-2.5-flash',
+        params.model
     ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
     let lastError = null;
@@ -509,6 +509,52 @@ exports.handleMessage = async (req, res) => {
                 tokensUsed: 0,
                 responseTimeMs: Date.now() - requestStartTime
             });
+        }
+
+        // ── ULTRA FAST PATH: Instant 0.1s Local Dispatcher for Pills & Standard Queries ──
+        const lowerMsg = message.trim().toLowerCase();
+        let directTool = null;
+
+        if (normalizedRole === 'employee') {
+            if (/my profile/i.test(lowerMsg)) directTool = 'getEmployeeProfile';
+            else if (/today attendance|aaj ki hajri/i.test(lowerMsg)) directTool = 'getEmployeeAttendance';
+            else if (/month salary|my salary|net salary/i.test(lowerMsg)) directTool = 'getEmployeeSalary';
+            else if (/leave balance|remaining leave/i.test(lowerMsg)) directTool = 'getEmployeeLeaves';
+            else if (/expense claims|my claims/i.test(lowerMsg)) directTool = 'getEmployeeClaims';
+            else if (/my kpi|kpi score/i.test(lowerMsg)) directTool = 'getEmployeeKPIs';
+            else if (/branch location|geofence/i.test(lowerMsg)) directTool = 'getBranchGeofence';
+            else if (/company holiday|holidays/i.test(lowerMsg)) directTool = 'getCompanyHolidays';
+        } else if (normalizedRole === 'admin' || normalizedRole === 'hr admin') {
+            if (/today attendance overview|attendance overview|today attendance/i.test(lowerMsg)) directTool = 'getTodayAttendanceSummary';
+            else if (/who is absent|absent today|late coming/i.test(lowerMsg)) directTool = 'getTodayAttendanceSummary';
+            else if (/present today count|present count|how many present/i.test(lowerMsg)) directTool = 'getTodayAttendanceSummary';
+            else if (/monthly attendance summary|monthly summary/i.test(lowerMsg)) directTool = 'getMonthlyAttendanceSummary';
+            else if (/employee list|employee stats|company stats/i.test(lowerMsg)) directTool = 'getEmployeeStats';
+            else if (/top kpi leaders|kpi leader|top kpi/i.test(lowerMsg)) directTool = 'getKPIScores';
+            else if (/pending leaves|pending leave/i.test(lowerMsg)) directTool = 'getPendingLeaves';
+            else if (/pending claims|pending claim/i.test(lowerMsg)) directTool = 'getPendingClaims';
+            else if (/payroll overview|payroll summary/i.test(lowerMsg)) directTool = 'getPayrollOverview';
+        } else if (normalizedRole === 'superadmin' || normalizedRole.includes('master')) {
+            if (/platform overview|platform stats|total revenue/i.test(lowerMsg)) directTool = 'getSuperAdminStats';
+            else if (/registered companies|list companies/i.test(lowerMsg)) directTool = 'getCompaniesList';
+            else if (/pending plan requests|plan requests/i.test(lowerMsg)) directTool = 'getPlanRequests';
+            else if (/subscription plans|available plans/i.test(lowerMsg)) directTool = 'getPlansList';
+        }
+
+        if (directTool && toolHandlers[directTool]) {
+            try {
+                const dbRes = await toolHandlers[directTool](authUser, {});
+                const replyText = formatLocalResponse(directTool, dbRes, companySettings);
+                aiCache.set(cacheKey, replyText);
+                return res.json({
+                    response: replyText,
+                    toolsUsed: [directTool],
+                    tokensUsed: 0,
+                    responseTimeMs: Date.now() - requestStartTime
+                });
+            } catch (err) {
+                console.warn(`Ultra Fast Path failed for tool ${directTool}:`, err.message);
+            }
         }
 
         let systemPrompt = '';
