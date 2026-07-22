@@ -95,11 +95,10 @@ const superadminTools = [
 
 async function generateContentFast(ai, params) {
     const modelsToTry = [
-        params.model || 'gemini-2.5-flash',
+        params.model,
         'gemini-2.5-flash',
-        'gemini-2.0-flash',
         'gemini-1.5-flash',
-        'gemini-1.5-pro'
+        'gemini-2.0-flash'
     ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
     let lastError = null;
@@ -114,8 +113,12 @@ async function generateContentFast(ai, params) {
             lastError = err;
             const errMsg = err.message || JSON.stringify(err);
             console.warn(`[Gemini API Warning] Model '${modelCandidate}' failed: ${errMsg.slice(0, 150)}. Trying next fallback model...`);
-            await new Promise(r => setTimeout(r, 200));
-            continue;
+            if (errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand') || errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+                await new Promise(r => setTimeout(r, 300));
+                continue;
+            } else {
+                throw err;
+            }
         }
     }
     throw lastError;
@@ -489,7 +492,7 @@ exports.handleMessage = async (req, res) => {
         if (!isActionQuery) {
             const cachedVal = aiCache.get(cacheKey);
             if (cachedVal) {
-                return res.json({ text: cachedVal, cached: true });
+                return res.json({ response: cachedVal, cached: true });
             }
         }
 
@@ -501,6 +504,7 @@ exports.handleMessage = async (req, res) => {
             const uId = authUser?.custom_id || authUser?.employee_id || authUser?.id || 'N/A';
             const replyText = `Your name is **${uName}** (Role: ${uRole}, Email: ${uEmail}, ID: ${uId}).`;
             return res.json({
+                response: replyText,
                 text: replyText,
                 toolsUsed: ['getUserProfile'],
                 tokensUsed: 0,
@@ -545,6 +549,7 @@ exports.handleMessage = async (req, res) => {
                 const replyText = formatLocalResponse(directTool, dbRes, companySettings);
                 aiCache.set(cacheKey, replyText);
                 return res.json({
+                    response: replyText,
                     text: replyText,
                     toolsUsed: [directTool],
                     tokensUsed: 0,
@@ -720,7 +725,7 @@ exports.handleMessage = async (req, res) => {
             console.error("AI Logging Failed:", logErr.message);
         }
 
-        res.json({ text: aiText });
+        res.json({ response: aiText, text: aiText });
     } catch (err) {
         console.error("Chatbot Error:", err.message || err);
         const errMsg = typeof err === 'object' ? JSON.stringify(err) : String(err);
