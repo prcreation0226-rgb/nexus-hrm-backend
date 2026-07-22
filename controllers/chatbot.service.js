@@ -126,7 +126,7 @@ async function getEmployeeLeaves(user) {
         [user.employee_id, user.company_id]
     );
     return {
-        balances: balances.length > 0 ? balances[0] : { annual: 15, sick: 10, unpaid: 20, emergency: 5 },
+        balances: balances.length > 0 ? balances[0] : null,
         history
     };
 }

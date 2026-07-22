@@ -204,15 +204,30 @@ function formatLocalResponse(toolName, result, context = {}) {
 
             case 'getEmployeeLeaves':
                 const userMsgLeave = (context.userMessage || '').toLowerCase();
-                const bal = result.balances || {};
+                const bal = result.balances;
                 const hist = Array.isArray(result.history) ? result.history : [];
 
-                if (/balance|remaining|left|kitni chutti|kitna leave|available/i.test(userMsgLeave)) {
-                    return `🏖️ **Your Current Leave Balances:**\n- **Annual:** ${bal.annual ?? 0} days\n- **Sick:** ${bal.sick ?? 0} days\n- **Emergency:** ${bal.emergency ?? 0} days\n- **Unpaid:** ${bal.unpaid ?? 0} days`;
+                // 1. Direct conversational leave inquiry ("mai aaj chutti maar lu ?", "can I take leave", "chutti le lu", "chutti apply")
+                if (/chutti\s*m[aa]*r|chutti\s*le|take\s*leave|apply|chutti\s*apply|aaj\s*chutti|leave\s*today/i.test(userMsgLeave)) {
+                    return `📝 Aap portal me **Leave Request** apply kar sakte hain! Dashboard me jaakar Leave Request submit kar dijiye (Annual, Sick, Emergency, ya Unpaid select karke). Submit hone ke baad aapka Admin/Manager use review karke approve kar dega.`;
                 }
 
-                const histStr = hist.length === 0 ? "No recent leave records found." : hist.map(h => `- ${h.leave_type}: ${h.days ?? 0} days (${h.status ?? 'N/A'})`).join('\n');
-                return `🏖️ **Leave Balance:**\n- **Annual:** ${bal.annual ?? 0} days\n- **Sick:** ${bal.sick ?? 0} days\n- **Emergency:** ${bal.emergency ?? 0} days\n- **Unpaid:** ${bal.unpaid ?? 0} days\n\n📜 **Recent Leave History:**\n${histStr}`;
+                // 2. Specific balance check ("how many leaves", "leave balance", "kitni chutti bachi hai")
+                if (/balance|remaining|left|kitni chutti|kitna leave|available/i.test(userMsgLeave)) {
+                    if (bal && (bal.annual != null || bal.sick != null)) {
+                        return `🏖️ **Your Current Leave Balances:**\n- **Annual:** ${bal.annual ?? 0} days\n- **Sick:** ${bal.sick ?? 0} days\n- **Emergency:** ${bal.emergency ?? 0} days\n- **Unpaid:** ${bal.unpaid ?? 0} days`;
+                    } else {
+                        return `📝 Aapki company me leaves direct application & Admin approval model par chalti hain. Aap Portal par jaakar kisbhi tarah ki chutti apply kar sakte hain, jise Admin approve karega.`;
+                    }
+                }
+
+                const histStr = hist.length === 0 ? "No recent leave applications found." : hist.map(h => `- ${h.leave_type}: ${h.days ?? 0} days (${h.status ?? 'N/A'})`).join('\n');
+
+                if (bal && (bal.annual != null || bal.sick != null)) {
+                    return `🏖️ **Leave Balance:**\n- **Annual:** ${bal.annual ?? 0} days\n- **Sick:** ${bal.sick ?? 0} days\n- **Emergency:** ${bal.emergency ?? 0} days\n- **Unpaid:** ${bal.unpaid ?? 0} days\n\n📜 **Recent Leave Applications:**\n${histStr}`;
+                } else {
+                    return `🏖️ **Leave Applications & History:**\nAap Portal se kisi bhi time leave apply kar sakte hain (Admin approval ke sath).\n\n📜 **Recent Leave Applications:**\n${histStr}`;
+                }
 
             case 'getEmployeeClaims':
                 const claims = Array.isArray(result) ? result : [];

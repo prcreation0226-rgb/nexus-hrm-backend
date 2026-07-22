@@ -38,7 +38,7 @@ async function runTests() {
     assert(t3.includes("1,500"), "getEmployeeSalary formats currency correctly");
 
     let t4 = formatLocalResponse('getEmployeeLeaves', { balances: null, history: [] }, {});
-    assert(t4.includes("Annual:") && t4.includes("0 days") && t4.includes("No recent leave records found"), "getEmployeeLeaves handles empty state");
+    assert(t4.includes("Leave Applications") && t4.includes("No recent leave applications found"), "getEmployeeLeaves handles empty state");
 
     let t5 = formatLocalResponse('getEmployeeClaims', [], {});
     assert(t5.includes("No expense claims found"), "getEmployeeClaims anti-hallucination empty state");
