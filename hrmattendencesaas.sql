@@ -134,7 +134,7 @@ CREATE TABLE `employees` (
   `email` varchar(150) DEFAULT NULL,
   `phone` varchar(30) DEFAULT '',
   `salary_rate` decimal(10,2) DEFAULT 0.00,
-  `salary_type` enum('hourly','daily') DEFAULT 'hourly',
+  `salary_type` enum('hourly','daily','monthly') DEFAULT 'hourly',
   `status` enum('active','on_leave','terminated') DEFAULT 'active',
   `joined_date` date DEFAULT NULL,
   `photo` longtext DEFAULT NULL,

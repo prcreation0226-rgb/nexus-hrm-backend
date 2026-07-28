@@ -60,6 +60,7 @@ exports.getAttendance = async (req, res) => {
             const rate = parseFloat(row.salary_rate || 0);
             let earning = 0;
             if (row.salary_type === 'hourly') earning = hours * rate;
+            else if (row.salary_type === 'monthly') earning = hours > 0 ? (rate / 30) : 0;
             else if (row.salary_type === 'daily') earning = hours > 0 ? rate : 0;
             const uif = earning * 0.01;
             return { ...row, earning: earning.toFixed(2), uif: uif.toFixed(2) };

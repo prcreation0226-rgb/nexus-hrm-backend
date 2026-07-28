@@ -237,7 +237,7 @@ exports.updateEmployee = async (req, res) => {
                     if (!validStatus.includes(val)) val = 'active';
                 }
                 if (field === 'salary_type') {
-                    const validTypes = ['hourly', 'daily'];
+                    const validTypes = ['hourly', 'daily', 'monthly'];
                     if (!validTypes.includes(val)) val = 'hourly';
                 }
 

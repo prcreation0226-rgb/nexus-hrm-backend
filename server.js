@@ -194,7 +194,7 @@ const initDB = async () => {
                 department VARCHAR(100) DEFAULT 'General',
                 email VARCHAR(150) UNIQUE,
                 salary_rate DECIMAL(10,2) DEFAULT 0.00,
-                salary_type ENUM('hourly','daily') DEFAULT 'hourly',
+                salary_type ENUM('hourly','daily','monthly') DEFAULT 'hourly',
                 status ENUM('active','on_leave','terminated') DEFAULT 'active',
                 joined_date DATE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -291,7 +291,7 @@ const initDB = async () => {
             { table: 'employees', column: 'status', type: "ENUM('active','on_leave','terminated') DEFAULT 'active'" },
             { table: 'employees', column: 'joined_date', type: 'DATE' },
             { table: 'employees', column: 'salary_rate', type: 'DECIMAL(10,2) DEFAULT 0.00' },
-            { table: 'employees', column: 'salary_type', type: "ENUM('hourly','daily') DEFAULT 'hourly'" },
+            { table: 'employees', column: 'salary_type', type: "ENUM('hourly','daily','monthly') DEFAULT 'hourly'" },
             { table: 'employees', column: 'department', type: 'VARCHAR(100) DEFAULT "General"' },
             { table: 'employees', column: 'email', type: 'VARCHAR(150) UNIQUE' },
             { table: 'employees', column: 'created_by', type: 'INT' },
