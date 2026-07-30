@@ -523,9 +523,9 @@ const initDB = async () => {
         const [plansCount] = await db.execute('SELECT COUNT(*) as count FROM plans');
         if (plansCount[0].count === 0) {
             const defaultPlans = [
-                ['Free Trial', '$0', '/ 7 days', 'Start your 7-day free trial.', JSON.stringify(['Up to 10 Employees', 'Basic Attendance']), 'Start Free', false],
-                ['Standard Plan', '$10', '/ 1 month', 'Perfect for small teams.', JSON.stringify(['Up to 50 Employees', 'Payroll Management', 'Basic Reports']), 'Get Standard', true],
-                ['Premium Plan', '$19', '/ 2 months', 'Best value for growing companies.', JSON.stringify(['Unlimited Employees', 'GPS & Face Recognition', 'Advanced Analytics', 'Priority Support']), 'Get Premium', false]
+                ['Free Trial', 'S$0', '/ 7 days', 'Start your 7-day free trial.', JSON.stringify(['Up to 10 Employees', 'Basic Attendance']), 'Start Free', false],
+                ['Standard Plan', 'S$10', '/ 1 month', 'Perfect for small teams.', JSON.stringify(['Up to 50 Employees', 'Payroll Management', 'Basic Reports']), 'Get Standard', true],
+                ['Premium Plan', 'S$19', '/ 2 months', 'Best value for growing companies.', JSON.stringify(['Unlimited Employees', 'GPS & Face Recognition', 'Advanced Analytics', 'Priority Support']), 'Get Premium', false]
             ];
             for (const p of defaultPlans) {
                 await db.execute('INSERT INTO plans (name, price, duration, description, features, buttonText, isPopular) VALUES (?,?,?,?,?,?,?)', p);

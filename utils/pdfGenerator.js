@@ -33,6 +33,17 @@ async function generatePayslipPDF(payroll, employee, companySettings) {
         const netSalary = Number(payroll.net_salary || 0).toFixed(2);
         const salaryRate = Number(employee.salary_rate || 0).toFixed(2);
 
+        const currencySymbolMap = {
+            'INR': '₹',
+            'USD': '$',
+            'EUR': '€',
+            'GBP': '£',
+            'AED': 'AED ',
+            'ZAR': 'R ',
+            'SGD': 'S$'
+        };
+        const currSymbol = currencySymbolMap[companySettings.currency] || companySettings.currency || '$';
+
         const htmlContent = `
         <!DOCTYPE html>
         <html lang="en">
@@ -86,7 +97,7 @@ async function generatePayslipPDF(payroll, employee, companySettings) {
                     <div class="emp-col">
                         <div class="detail-row"><span class="label">Pay Period:</span> <span class="value">${new Date(payroll.cycle_start).toLocaleDateString()} - ${new Date(payroll.cycle_end).toLocaleDateString()}</span></div>
                         <div class="detail-row"><span class="label">Salary Type:</span> <span class="value" style="text-transform: capitalize;">${employee.salary_type || 'Hourly'}</span></div>
-                        <div class="detail-row"><span class="label">Salary Rate:</span> <span class="value">${companySettings.currency || '$'}${salaryRate}</span></div>
+                        <div class="detail-row"><span class="label">Salary Rate:</span> <span class="value">${currSymbol}${salaryRate}</span></div>
                     </div>
                 </div>
 
@@ -101,7 +112,7 @@ async function generatePayslipPDF(payroll, employee, companySettings) {
                         <tbody>
                             <tr>
                                 <td>Basic Salary / Wages</td>
-                                <td class="amount">${companySettings.currency || '$'}${baseSalary}</td>
+                                <td class="amount">${currSymbol}${baseSalary}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -118,22 +129,22 @@ async function generatePayslipPDF(payroll, employee, companySettings) {
                         <tbody>
                             <tr>
                                 <td>Standard Deductions (Late, UIF, etc.)</td>
-                                <td class="amount">${companySettings.currency || '$'}${deductions}</td>
+                                <td class="amount">${currSymbol}${deductions}</td>
                             </tr>
                             ${Number(advanceBalance) > 0 ? `
                             <tr>
                                 <td>Advance Balance</td>
-                                <td class="amount">${companySettings.currency || '$'}${advanceBalance}</td>
+                                <td class="amount">${currSymbol}${advanceBalance}</td>
                             </tr>` : ''}
                         </tbody>
                     </table>
                 </div>
 
                 <div class="summary">
-                    <div class="detail-row"><span class="label">Gross Earnings:</span> <span class="value">${companySettings.currency || '$'}${baseSalary}</span></div>
-                    <div class="detail-row"><span class="label">Total Deductions:</span> <span class="value">${companySettings.currency || '$'}${deductions}</span></div>
+                    <div class="detail-row"><span class="label">Gross Earnings:</span> <span class="value">${currSymbol}${baseSalary}</span></div>
+                    <div class="detail-row"><span class="label">Total Deductions:</span> <span class="value">${currSymbol}${deductions}</span></div>
                     <div class="net-pay">
-                        Net Salary: ${companySettings.currency || '$'}${netSalary}
+                        Net Salary: ${currSymbol}${netSalary}
                     </div>
                 </div>
 

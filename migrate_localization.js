@@ -12,7 +12,7 @@ async function migrate() {
                 platform_name VARCHAR(255) DEFAULT 'Nexus HRM Pro',
                 support_email VARCHAR(255) DEFAULT 'support@nexushrm.com',
                 timezone VARCHAR(100) DEFAULT 'Asia/Kolkata',
-                currency VARCHAR(20) DEFAULT 'INR',
+                currency VARCHAR(20) DEFAULT 'SGD',
                 date_format VARCHAR(20) DEFAULT 'DD/MM/YYYY',
                 language VARCHAR(50) DEFAULT 'English',
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

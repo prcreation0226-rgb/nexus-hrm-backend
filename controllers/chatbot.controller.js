@@ -480,6 +480,7 @@ exports.handleMessage = async (req, res) => {
                     companySettings.currency = settingsRows[0].currency;
                     if (companySettings.currency === 'INR') companySettings.locale = 'en-IN';
                     if (companySettings.currency === 'EUR') companySettings.locale = 'en-GB';
+                    if (companySettings.currency === 'SGD') companySettings.locale = 'en-SG';
                 }
             } catch (err) {
                 console.error("Failed to fetch company context", err.message);
