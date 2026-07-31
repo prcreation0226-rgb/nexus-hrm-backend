@@ -10,10 +10,22 @@ if (!fs.existsSync(payslipsDir)) {
 }
 
 async function generatePayslipPDF(payroll, employee, companySettings) {
+    let browser;
     try {
-        const browser = await puppeteer.launch({
+        browser = await puppeteer.launch({
             headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process',
+                '--disable-extensions'
+            ]
         });
         const page = await browser.newPage();
 
@@ -180,13 +192,15 @@ async function generatePayslipPDF(payroll, employee, companySettings) {
             margin: { top: '20px', bottom: '20px' }
         });
 
-        await browser.close();
-
         // Return relative path for saving in DB
         return `/uploads/payslips/${fileName}`;
     } catch (error) {
         console.error('Error generating PDF with Puppeteer:', error);
         throw error;
+    } finally {
+        if (browser) {
+            await browser.close().catch(() => {});
+        }
     }
 }
 
