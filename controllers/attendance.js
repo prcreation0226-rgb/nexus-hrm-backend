@@ -211,14 +211,14 @@ exports.bulkMarkAttendance = async (req, res) => {
     const { employeeIds, date, status, inTime, outTime } = req.body;
     try {
         const finalIn = inTime || '08:00';
-        const finalOut = outTime || '17:00';
+        const fIn = `${date} ${finalIn}:00`;
+        const fOut = outTime ? `${date} ${outTime}:00` : null;
 
-        let fIn = `${date} ${finalIn}:00`;
-        let fOut = `${date} ${finalOut}:00`;
-
-        // Calculate hours robustly
-        const diff = new Date(fOut.replace(' ', 'T')) - new Date(fIn.replace(' ', 'T'));
-        const totalHours = Math.max(0, (diff / (1000 * 60 * 60))).toFixed(2);
+        let totalHours = 0.00;
+        if (fOut) {
+            const diff = new Date(fOut.replace(' ', 'T')) - new Date(fIn.replace(' ', 'T'));
+            totalHours = Math.max(0, (diff / (1000 * 60 * 60))).toFixed(2);
+        }
 
         for (let empId of employeeIds) {
             // Safety: Verify admin ownership
