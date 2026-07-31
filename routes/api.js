@@ -153,6 +153,7 @@ router.get('/payroll', auth, subscriptionGuard, payrollController.getPayroll);
 router.post('/payroll/generate', auth, subscriptionGuard, adminOnly, payrollController.generatePayroll);
 router.post('/payroll/:id/generate-pdf', auth, subscriptionGuard, payrollController.generateSinglePdf);
 router.patch('/payroll/:id', auth, subscriptionGuard, adminOnly, payrollController.updateStatus);
+router.delete('/payroll/:id', auth, subscriptionGuard, adminOnly, payrollController.deletePayroll);
 
 // Email Settings
 router.get('/settings/email', auth, adminOnly, emailSettingsController.getEmailSettings);

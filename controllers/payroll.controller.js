@@ -269,6 +269,24 @@ exports.updateStatus = async (req, res) => {
     }
 };
 
+exports.deletePayroll = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [existing] = await db.execute('SELECT company_id FROM payroll WHERE id = ?', [id]);
+        if (existing.length === 0) return res.status(404).json({ error: 'Payroll record not found' });
+        
+        if (req.user.role !== 'MasterAdmin' && existing[0].company_id !== req.user.company_id) {
+            return res.status(403).json({ error: 'Unauthorized to delete this record' });
+        }
+
+        await db.execute('DELETE FROM payroll WHERE id = ?', [id]);
+        res.json({ success: true, message: 'Payroll record deleted' });
+    } catch (err) {
+        console.error('Error deleting payroll record:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
 exports.generateSinglePdf = async (req, res) => {
     try {
         const { id } = req.params;
