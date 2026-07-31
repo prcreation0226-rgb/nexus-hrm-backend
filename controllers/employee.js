@@ -29,7 +29,7 @@ exports.getAllEmployees = async (req, res) => {
         let query = `
             SELECT e.*, 
                    CASE WHEN fe.id IS NOT NULL THEN 1 ELSE 0 END as has_face_registered,
-                   COALESCE((SELECT SUM(p.uif_amount) FROM payroll p WHERE p.employee_id = e.id AND p.status = 'paid'), 0) as total_uif_collected
+                   COALESCE((SELECT SUM(COALESCE(p.cpf_employee, p.uif_amount)) FROM payroll p WHERE p.employee_id = e.id AND p.status = 'paid'), 0) as total_uif_collected
             FROM employees e
             LEFT JOIN face_embeddings fe ON e.id = fe.employee_id
             WHERE 1=1
@@ -55,7 +55,7 @@ exports.getAllEmployees = async (req, res) => {
 exports.addEmployee = async (req, res) => {
     const {
         machine_id, custom_id, name, role, department, shift, email, phone,
-        salary_rate, salary_type, password, joined_date,
+        salary_rate, salary_type, password, joined_date, date_of_birth,
         uif_number, advance_balance, signature, is_uif_registered
     } = req.body;
 
@@ -107,7 +107,8 @@ exports.addEmployee = async (req, res) => {
         const dbShift = ['Morning Shift', 'Evening Shift', 'Night Shift'].includes(shift) ? shift : 'Morning Shift';
         const dbSalaryType = ['hourly', 'daily', 'monthly'].includes(salary_type) ? salary_type : 'hourly';
 
-        const empSql = 'INSERT INTO employees (machine_id, custom_id, name, role, department, shift, email, phone, salary_rate, salary_type, joined_date, photo, uif_number, advance_balance, signature, created_by, is_uif_registered, company_id, assigned_branch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        const empSql = 'INSERT INTO employees (machine_id, custom_id, name, role, department, shift, email, phone, salary_rate, salary_type, joined_date, date_of_birth, photo, uif_number, advance_balance, signature, created_by, is_uif_registered, company_id, assigned_branch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        const formattedDOB = date_of_birth ? date_of_birth.split('T')[0] : null;
         const empValues = [
             nextMachineId.toString(),
             finalCustomId,
@@ -120,6 +121,7 @@ exports.addEmployee = async (req, res) => {
             parseFloat(salary_rate) || 0,
             dbSalaryType,
             formattedJoinedDate,
+            formattedDOB,
             photo || null,
             uif_number || '',
             parseFloat(advance_balance) || 0,
@@ -210,6 +212,13 @@ exports.updateEmployee = async (req, res) => {
             'email', 'phone', 'salary_rate', 'salary_type', 'uif_number',
             'advance_balance', 'advance_installment', 'status', 'assigned_branch'
         ];
+
+        // Handle date_of_birth separately (needs date formatting)
+        if (data.date_of_birth !== undefined) {
+            const dobVal = data.date_of_birth ? data.date_of_birth.split('T')[0] : null;
+            empUpdates.push('`date_of_birth` = ?');
+            empParams.push(dobVal);
+        }
 
         empFields.forEach(field => {
             if (data[field] !== undefined) {

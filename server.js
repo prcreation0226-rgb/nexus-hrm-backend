@@ -345,7 +345,15 @@ const initDB = async () => {
             { table: 'settings', column: 'company_id', type: 'BIGINT DEFAULT NULL' },
 
             // Employee Branch Assignment (for GeoFencing)
-            { table: 'employees', column: 'assigned_branch', type: 'VARCHAR(150) DEFAULT NULL' }
+            { table: 'employees', column: 'assigned_branch', type: 'VARCHAR(150) DEFAULT NULL' },
+
+            // Employee Date of Birth (for CPF age-based calculation)
+            { table: 'employees', column: 'date_of_birth', type: 'DATE DEFAULT NULL' },
+
+            // CPF Contribution columns on Payroll
+            { table: 'payroll', column: 'cpf_employee', type: 'DECIMAL(10,2) DEFAULT 0.00' },
+            { table: 'payroll', column: 'cpf_employer', type: 'DECIMAL(10,2) DEFAULT 0.00' },
+            { table: 'payroll', column: 'cpf_total', type: 'DECIMAL(10,2) DEFAULT 0.00' }
         ];
 
         for (const col of columns) {

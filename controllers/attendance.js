@@ -433,15 +433,15 @@ exports.getDashboardStats = async (req, res) => {
             }
         });
 
-        // 4.5 Calculate Total Accumulated UIF (for Admin)
-        let uifQuery = 'SELECT SUM(uif_amount) as total_uif FROM payroll';
-        let uifParams = [];
+        // 4.5 Calculate Total Accumulated CPF (for Admin)
+        let cpfQuery = 'SELECT SUM(COALESCE(cpf_employee, uif_amount)) as total_cpf FROM payroll';
+        let cpfParams = [];
         if (req.user.role !== 'MasterAdmin') {
-            uifQuery += ' WHERE company_id = ?';
-            uifParams.push(req.user.company_id);
+            cpfQuery += ' WHERE company_id = ?';
+            cpfParams.push(req.user.company_id);
         }
-        const [uifResult] = await db.execute(uifQuery, uifParams);
-        const totalUifCollected = uifResult[0].total_uif || 0;
+        const [cpfResult] = await db.execute(cpfQuery, cpfParams);
+        const totalCpfCollected = cpfResult[0].total_cpf || 0;
 
         // 5. Generate Trend Data (Dynamic Range)
         const range = parseInt(req.query.range) || 7;
@@ -495,7 +495,7 @@ exports.getDashboardStats = async (req, res) => {
             lateTrend,
             absentStaff: absentStaff, // Full list for the UI
             trend: trendData,
-            totalUifCollected: totalUifCollected,
+            totalCpfCollected: totalCpfCollected,
             salaryCycle: {
                 progress: Math.min(Math.round(((now.diff(cycleStartDateMoment, 'days') + 1) / (cycleEndDateMoment.diff(cycleStartDateMoment, 'days') + 1)) * 100), 100),
                 day: now.diff(cycleStartDateMoment, 'days') + 1,

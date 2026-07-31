@@ -127,10 +127,21 @@ async function generatePayslipPDF(payroll, employee, companySettings) {
                             </tr>
                         </thead>
                         <tbody>
+                            ${Number(payrollData.cpf_employee || payrollData.uif_amount || 0) > 0 ? `
                             <tr>
-                                <td>Standard Deductions (Late, UIF, etc.)</td>
-                                <td class="amount">${currSymbol}${deductions}</td>
-                            </tr>
+                                <td>Employee CPF Deduction</td>
+                                <td class="amount">${currSymbol}${Number(payrollData.cpf_employee || payrollData.uif_amount || 0).toFixed(2)}</td>
+                            </tr>` : ''}
+                            ${Number(payrollData.cpf_employer || 0) > 0 ? `
+                            <tr>
+                                <td>Employer CPF Contribution</td>
+                                <td class="amount">${currSymbol}${Number(payrollData.cpf_employer || 0).toFixed(2)}</td>
+                            </tr>` : ''}
+                            ${Number(deductions) - Number(payrollData.cpf_employee || payrollData.uif_amount || 0) - Number(advanceBalance) > 0 ? `
+                            <tr>
+                                <td>Late / Other Deductions</td>
+                                <td class="amount">${currSymbol}${(Number(deductions) - Number(payrollData.cpf_employee || payrollData.uif_amount || 0) - Number(advanceBalance)).toFixed(2)}</td>
+                            </tr>` : ''}
                             ${Number(advanceBalance) > 0 ? `
                             <tr>
                                 <td>Advance Balance</td>

@@ -1,5 +1,23 @@
 const db = require('../config/db');
 
+// --- CPF Rate Helper ---
+const CPF_OW_CEILING = 8000;
+
+function getCpfRates(dateOfBirth) {
+    if (!dateOfBirth) return null;
+    const today = new Date();
+    const dob = new Date(dateOfBirth);
+    let age = today.getFullYear() - dob.getFullYear();
+    const m = today.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+
+    if (age <= 55) return { employee: 0.20, employer: 0.17, total: 0.37, age };
+    if (age <= 60) return { employee: 0.18, employer: 0.16, total: 0.34, age };
+    if (age <= 65) return { employee: 0.125, employer: 0.125, total: 0.25, age };
+    if (age <= 70) return { employee: 0.075, employer: 0.09, total: 0.165, age };
+    return { employee: 0.05, employer: 0.075, total: 0.125, age };
+}
+
 // Helper: treat 'admin', 'Master Admin', 'hr', and 'hr admin' as admin roles
 const isAdmin = (role) => {
     if (!role) return false;
@@ -46,7 +64,7 @@ exports.generatePayroll = async (req, res) => {
 
         const results = [];
         for (const empId of employeeIds) {
-            const empSql = 'SELECT created_by, salary_rate, salary_type, is_uif_registered, advance_balance FROM employees WHERE id = ?';
+            const empSql = 'SELECT created_by, salary_rate, salary_type, is_uif_registered, advance_balance, date_of_birth FROM employees WHERE id = ?';
             console.log('📝 Executing SQL:', empSql, 'Params:', [empId]);
             const [empCheck] = await db.execute(empSql, [empId]);
             
@@ -99,15 +117,23 @@ exports.generatePayroll = async (req, res) => {
             }
 
             const grossEarnings = Math.max(0, baseEarnings);
-            const uif = employee.is_uif_registered ? (grossEarnings * 0.01) : 0;
+            // CPF calculation (replaces flat 1% UIF)
+            const cpfRates = getCpfRates(employee.date_of_birth);
+            let cpfEmployee = 0, cpfEmployer = 0, cpfTotal = 0;
+            if (cpfRates && grossEarnings > 750) {
+                const cpfBase = Math.min(grossEarnings, CPF_OW_CEILING);
+                cpfEmployee = Math.round(cpfBase * cpfRates.employee * 100) / 100;
+                cpfEmployer = Math.round(cpfBase * cpfRates.employer * 100) / 100;
+                cpfTotal = Math.round(cpfBase * cpfRates.total * 100) / 100;
+            }
             const advance = parseFloat(employee.advance_balance || 0);
-            const netSalary = Math.max(0, grossEarnings - uif - advance - deductions);
+            const netSalary = Math.max(0, grossEarnings - cpfEmployee - advance - deductions);
             // Delete any existing pending payroll for this employee (prevents duplicates)
             await db.execute('DELETE FROM payroll WHERE employee_id = ? AND status = "pending"', [empId]);
 
             // Insert fresh payroll record
-            const insSql = 'INSERT INTO payroll (employee_id, cycle_start, cycle_end, total_hours, gross_earnings, base_salary, deductions, uif_amount, advance_deduction, overtime, net_salary, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "pending")';
-            const insParams = [empId, start, end, totalHours, grossEarnings, rate, deductions, uif, advance, (overtimeHours * rate * (parseFloat(settings.ot_multiplier) || 1.5)), netSalary];
+            const insSql = 'INSERT INTO payroll (employee_id, cycle_start, cycle_end, total_hours, gross_earnings, base_salary, deductions, uif_amount, cpf_employee, cpf_employer, cpf_total, advance_deduction, overtime, net_salary, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "pending")';
+            const insParams = [empId, start, end, totalHours, grossEarnings, rate, deductions, cpfEmployee, cpfEmployee, cpfEmployer, cpfTotal, advance, (overtimeHours * rate * (parseFloat(settings.ot_multiplier) || 1.5)), netSalary];
             await db.execute(insSql, insParams);
             results.push({ empId, action: 'created' });
         }
@@ -152,7 +178,10 @@ exports.getPayrollHistory = async (req, res) => {
                 ...p,
                 shifts_data: shifts,
                 totalEarnings: p.gross_earnings || 0,
-                totalUIF: p.uif_amount || 0,
+                totalCPF: p.cpf_employee || p.uif_amount || 0,
+                cpfEmployee: p.cpf_employee || 0,
+                cpfEmployer: p.cpf_employer || 0,
+                cpfTotal: p.cpf_total || 0,
                 netSalary: p.net_salary || 0
             };
         }));

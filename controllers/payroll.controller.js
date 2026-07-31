@@ -1,6 +1,25 @@
 const db = require('../config/db');
 const { generatePayslipPDF } = require('../utils/pdfGenerator');
 
+// --- CPF Rate Helper ---
+// Ordinary Wage Ceiling: S$8,000/month
+const CPF_OW_CEILING = 8000;
+
+function getCpfRates(dateOfBirth) {
+    if (!dateOfBirth) return null; // DOB missing — cannot compute CPF
+    const today = new Date();
+    const dob = new Date(dateOfBirth);
+    let age = today.getFullYear() - dob.getFullYear();
+    const m = today.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+
+    if (age <= 55) return { employee: 0.20, employer: 0.17, total: 0.37, age };
+    if (age <= 60) return { employee: 0.18, employer: 0.16, total: 0.34, age };
+    if (age <= 65) return { employee: 0.125, employer: 0.125, total: 0.25, age };
+    if (age <= 70) return { employee: 0.075, employer: 0.09, total: 0.165, age };
+    return { employee: 0.05, employer: 0.075, total: 0.125, age };
+}
+
 exports.getPayroll = async (req, res) => {
     try {
         const companyId = req.user.company_id;
@@ -131,10 +150,18 @@ exports.generatePayroll = async (req, res) => {
                 deductions = lateCount * lateDeductionAmount;
             }
 
-            // UIF Deduction (1% of base salary)
+            // CPF Calculation (replaces UIF 1%)
             console.log(`Calculating for emp ${emp.id}: baseSalary=${baseSalary}`);
-            const uifAmount = baseSalary * 0.01;
-            deductions += uifAmount;
+            const cpfRates = getCpfRates(emp.date_of_birth);
+            let cpfEmployee = 0, cpfEmployer = 0, cpfTotal = 0;
+            if (cpfRates && baseSalary > 750) {
+                const cpfBase = Math.min(baseSalary, CPF_OW_CEILING);
+                cpfEmployee = Math.round(cpfBase * cpfRates.employee * 100) / 100;
+                cpfEmployer = Math.round(cpfBase * cpfRates.employer * 100) / 100;
+                cpfTotal = Math.round(cpfBase * cpfRates.total * 100) / 100;
+            }
+            // Employee CPF is a deduction from salary (like old UIF)
+            deductions += cpfEmployee;
 
             let advanceDeduction = 0;
             const advanceBalance = parseFloat(emp.advance_balance || 0);
@@ -176,11 +203,11 @@ exports.generatePayroll = async (req, res) => {
             const [insertResult] = await db.execute(`
                 INSERT INTO payroll (
                     company_id, employee_id, cycle_start, cycle_end, 
-                    total_hours, base_salary, deductions, uif_amount, advance_deduction, net_salary, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                    total_hours, base_salary, deductions, uif_amount, cpf_employee, cpf_employer, cpf_total, advance_deduction, net_salary, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
             `, [
                 companyId, emp.id, startDate, endDate, 
-                totalHours, baseSalary, deductions, uifAmount, advanceDeduction, netSalary
+                totalHours, baseSalary, deductions, cpfEmployee, cpfEmployee, cpfEmployer, cpfTotal, advanceDeduction, netSalary
             ]);
             
             const payrollId = insertResult.insertId;
@@ -289,8 +316,8 @@ exports.getLiveAccrual = async (req, res) => {
         const startDate = `${year}-${month}-01`;
         const endDate = `${year}-${month}-${String(now.getDate()).padStart(2, '0')}`;
 
-        // Get Employee Details
-        const [empRows] = await db.execute('SELECT salary_rate, salary_type, advance_balance FROM employees WHERE id = ?', [employeeId]);
+        // Get Employee Details (include date_of_birth for CPF)
+        const [empRows] = await db.execute('SELECT salary_rate, salary_type, advance_balance, date_of_birth FROM employees WHERE id = ?', [employeeId]);
         if (empRows.length === 0) return res.json({ liveEarnings: 0, startDate, endDate, totalHours: 0 });
         const emp = empRows[0];
         const salaryRate = parseFloat(emp.salary_rate || 0);
@@ -315,9 +342,17 @@ exports.getLiveAccrual = async (req, res) => {
             liveEarnings = (dayRows[0].days || 0) * salaryRate;
         }
 
-        const uifAmount = liveEarnings * 0.01;
+        // CPF calculation (replaces flat UIF 1%)
+        const cpfRates = getCpfRates(emp.date_of_birth);
+        let cpfEmployee = 0, cpfEmployer = 0, cpfTotal = 0;
+        if (cpfRates && liveEarnings > 750) {
+            const cpfBase = Math.min(liveEarnings, CPF_OW_CEILING);
+            cpfEmployee = Math.round(cpfBase * cpfRates.employee * 100) / 100;
+            cpfEmployer = Math.round(cpfBase * cpfRates.employer * 100) / 100;
+            cpfTotal = Math.round(cpfBase * cpfRates.total * 100) / 100;
+        }
         const advanceDeduction = parseFloat(emp.advance_balance || 0);
-        const netSalary = Math.max(0, liveEarnings - uifAmount - advanceDeduction);
+        const netSalary = Math.max(0, liveEarnings - cpfEmployee - advanceDeduction);
 
         res.json({
             startDate,
@@ -326,7 +361,11 @@ exports.getLiveAccrual = async (req, res) => {
             totalHours,
             salaryRate,
             salaryType: emp.salary_type,
-            uifAmount,
+            cpfEmployee,
+            cpfEmployer,
+            cpfTotal,
+            cpfAge: cpfRates ? cpfRates.age : null,
+            cpfMissing: !cpfRates,
             advanceDeduction,
             netSalary
         });
