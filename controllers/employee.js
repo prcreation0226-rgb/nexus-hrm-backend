@@ -29,7 +29,10 @@ exports.getAllEmployees = async (req, res) => {
         let query = `
             SELECT e.*, 
                    CASE WHEN fe.id IS NOT NULL THEN 1 ELSE 0 END as has_face_registered,
-                   COALESCE((SELECT SUM(COALESCE(p.cpf_employee, p.uif_amount)) FROM payroll p WHERE p.employee_id = e.id AND p.status = 'paid'), 0) as total_uif_collected
+                   COALESCE((SELECT SUM(COALESCE(p.cpf_employee, p.uif_amount)) FROM payroll p WHERE p.employee_id = e.id AND p.status = 'paid'), 0) as total_uif_collected,
+                   COALESCE((SELECT SUM(COALESCE(p.cpf_employee, p.uif_amount)) FROM payroll p WHERE p.employee_id = e.id AND p.status = 'paid'), 0) as total_cpf_employee,
+                   COALESCE((SELECT SUM(COALESCE(p.cpf_employer, 0)) FROM payroll p WHERE p.employee_id = e.id AND p.status = 'paid'), 0) as total_cpf_employer,
+                   COALESCE((SELECT SUM(COALESCE(p.cpf_total, COALESCE(p.cpf_employee, p.uif_amount))) FROM payroll p WHERE p.employee_id = e.id AND p.status = 'paid'), 0) as total_cpf_total
             FROM employees e
             LEFT JOIN face_embeddings fe ON e.id = fe.employee_id
             WHERE 1=1
