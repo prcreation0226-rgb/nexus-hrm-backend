@@ -17,16 +17,53 @@ exports.login = async (req, res) => {
         console.log('--- LOGIN DEBUG START ---');
         console.log('Identifier received:', identifier);
         
-        // Comprehensive search: Check Email, Machine ID, or Employee Database ID
-        const [users] = await db.execute(`
-            SELECT u.*, e.name as emp_name, e.photo as emp_photo, e.machine_id, e.id as employee_db_id 
+        // Comprehensive search: Check User Email, Employee Email, Custom Employee ID, Machine ID, or Employee Database ID
+        let [users] = await db.execute(`
+            SELECT u.*, e.name as emp_name, e.photo as emp_photo, e.machine_id, e.custom_id, e.email as emp_email, e.id as employee_db_id 
             FROM users u 
             LEFT JOIN employees e ON u.employee_id = e.id 
-            WHERE u.email = ? OR e.machine_id = ? OR e.id = ?
-        `, [identifier, identifier, identifier]);
+            WHERE u.email = ? OR e.email = ? OR e.custom_id = ? OR e.machine_id = ? OR e.id = ?
+        `, [identifier, identifier, identifier, identifier, identifier]);
         
         console.log('Database result count:', users.length);
         
+        // Auto-healing: If no user found in `users` table, check `employees` table directly
+        if (users.length === 0) {
+            console.log('No user row found. Checking employees table for auto-healing...');
+            const [empRows] = await db.execute(`
+                SELECT * FROM employees 
+                WHERE email = ? OR custom_id = ? OR machine_id = ? OR id = ?
+            `, [identifier, identifier, identifier, identifier]);
+
+            if (empRows.length > 0) {
+                const emp = empRows[0];
+                console.log('Employee found in employees table without user account. Healing user record for employee ID:', emp.id);
+                
+                // Check if user record exists for this employee_id under a different email
+                const [existingUser] = await db.execute('SELECT * FROM users WHERE employee_id = ?', [emp.id]);
+                
+                if (existingUser.length > 0) {
+                    // Update user's email to match employee email
+                    await db.execute('UPDATE users SET email = ? WHERE employee_id = ?', [emp.email || '', emp.id]);
+                } else {
+                    // Create missing user record with default/hashed password
+                    const defaultPasswordHash = await bcrypt.hash('12345678', 10);
+                    await db.execute(
+                        'INSERT INTO users (employee_id, email, password, role, name, created_by, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        [emp.id, emp.email || '', defaultPasswordHash, emp.role || 'employee', emp.name || '', emp.created_by || null, emp.company_id || null]
+                    );
+                }
+
+                // Re-fetch the healed user
+                [users] = await db.execute(`
+                    SELECT u.*, e.name as emp_name, e.photo as emp_photo, e.machine_id, e.custom_id, e.email as emp_email, e.id as employee_db_id 
+                    FROM users u 
+                    LEFT JOIN employees e ON u.employee_id = e.id 
+                    WHERE u.employee_id = ? OR u.email = ? OR e.email = ?
+                `, [emp.id, emp.email || '', emp.email || '']);
+            }
+        }
+
         if (users.length === 0) {
             console.log('FAILURE: No user found matching identifier');
             return res.status(401).json({ message: 'Invalid credentials (User not found)' });

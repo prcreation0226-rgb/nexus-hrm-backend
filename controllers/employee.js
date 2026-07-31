@@ -281,6 +281,10 @@ exports.updateEmployee = async (req, res) => {
         const userUpdates = [];
         const userParams = [];
 
+        if (data.email) {
+            userUpdates.push('email = ?');
+            userParams.push(data.email);
+        }
         if (data.name) { 
             userUpdates.push('name = ?'); 
             userParams.push(data.name); 
@@ -301,7 +305,19 @@ exports.updateEmployee = async (req, res) => {
             userParams.push(hashedPassword);
         }
 
-        if (userUpdates.length > 0) {
+        // Ensure a user record exists for this employee_id
+        const [existingUser] = await db.execute('SELECT id FROM users WHERE employee_id = ?', [id]);
+        if (existingUser.length === 0) {
+            const [empData] = await db.execute('SELECT * FROM employees WHERE id = ?', [id]);
+            if (empData.length > 0) {
+                const emp = empData[0];
+                const pwd = (data.password && data.password.trim() !== '') ? await bcrypt.hash(data.password, 10) : await bcrypt.hash('12345678', 10);
+                await db.execute(
+                    'INSERT INTO users (employee_id, email, password, role, name, created_by, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [id, emp.email || '', pwd, emp.role || 'employee', emp.name || '', emp.created_by, emp.company_id]
+                );
+            }
+        } else if (userUpdates.length > 0) {
             const userQuery = `UPDATE users SET ${userUpdates.join(', ')} WHERE employee_id = ?`;
             userParams.push(id);
             console.log('📝 Executing SQL (Sync User):', userQuery, 'Params:', userParams);
@@ -371,12 +387,20 @@ exports.adminResetPassword = async (req, res) => {
 
         // Update the user's password
         const [updateResult] = await db.execute(
-            'UPDATE users SET password = ? WHERE employee_id = ? AND company_id = ?',
-            [hashedPassword, employeeId, companyId]
+            'UPDATE users SET password = ? WHERE employee_id = ?',
+            [hashedPassword, employeeId]
         );
 
         if (updateResult.affectedRows === 0) {
-            return res.status(404).json({ message: 'User account not found for this employee' });
+            // Auto-heal: User row missing for employee, create it now!
+            const [fullEmp] = await db.execute('SELECT * FROM employees WHERE id = ?', [employeeId]);
+            if (fullEmp.length > 0) {
+                const emp = fullEmp[0];
+                await db.execute(
+                    'INSERT INTO users (employee_id, email, password, role, name, created_by, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [employeeId, emp.email || '', hashedPassword, emp.role || 'employee', emp.name || '', emp.created_by, emp.company_id]
+                );
+            }
         }
 
         res.json({ 
