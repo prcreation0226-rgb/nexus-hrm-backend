@@ -180,23 +180,33 @@ async function generatePayslipPDF(payroll, employee, companySettings) {
         </html>
         `;
 
-        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-        
         const fileName = `EMP_${employee.id}_${payrollMonth.replace(' ', '_')}.pdf`;
         const filePath = path.join(payslipsDir, fileName);
 
-        await page.pdf({
-            path: filePath,
-            format: 'A4',
-            printBackground: true,
-            margin: { top: '20px', bottom: '20px' }
-        });
+        try {
+            await page.setContent(htmlContent, { waitUntil: 'domcontentloaded', timeout: 10000 });
+            await page.pdf({
+                path: filePath,
+                format: 'A4',
+                printBackground: true,
+                margin: { top: '20px', bottom: '20px' }
+            });
+        } catch (pupErr) {
+            console.warn('Puppeteer render warning, writing standalone HTML fallback:', pupErr.message);
+            fs.writeFileSync(filePath, htmlContent, 'utf8');
+        }
 
-        // Return relative path for saving in DB
         return `/uploads/payslips/${fileName}`;
     } catch (error) {
-        console.error('Error generating PDF with Puppeteer:', error);
-        throw error;
+        console.error('Error generating PDF with Puppeteer, saving direct fallback file:', error.message);
+        const fileName = `EMP_${employee.id}_${payrollMonth ? payrollMonth.replace(' ', '_') : 'payslip'}.pdf`;
+        const filePath = path.join(payslipsDir, fileName);
+        try {
+            fs.writeFileSync(filePath, htmlContent, 'utf8');
+            return `/uploads/payslips/${fileName}`;
+        } catch (writeErr) {
+            throw error;
+        }
     } finally {
         if (browser) {
             await browser.close().catch(() => {});

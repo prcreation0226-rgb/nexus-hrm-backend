@@ -85,6 +85,56 @@ if (!fs.existsSync(uploadsDir)) {
     console.log('📁 Created uploads directory');
 }
 
+// Dynamic self-healing middleware for missing payslips on ephemeral filesystems (Railway/Render)
+const db = require('./config/db');
+const { generatePayslipPDF } = require('./utils/pdfGenerator');
+
+app.use('/uploads/payslips/:filename', async (req, res, next) => {
+    const filename = req.params.filename;
+    const filePath = path.join(__dirname, 'uploads', 'payslips', filename);
+
+    if (fs.existsSync(filePath)) {
+        return next(); // File exists, let static handler serve it
+    }
+
+    // File missing on disk (e.g. Railway container restart) -> Auto-regenerate on the fly!
+    try {
+        console.log(`⚠️ Missing payslip PDF requested: ${filename}. Auto-regenerating on the fly...`);
+        const searchPath = `%${filename}`;
+        const [payrollRows] = await db.execute('SELECT * FROM payroll WHERE pdf_path LIKE ? LIMIT 1', [searchPath]);
+
+        if (payrollRows.length === 0) {
+            return res.status(404).send('Payslip record not found');
+        }
+
+        const payroll = payrollRows[0];
+        const [empRows] = await db.execute('SELECT * FROM employees WHERE id = ?', [payroll.employee_id]);
+        if (empRows.length === 0) return res.status(404).send('Employee not found');
+        const employee = empRows[0];
+
+        let [settingsRows] = await db.execute('SELECT * FROM settings WHERE company_id = ?', [payroll.company_id]);
+        let settings = settingsRows[0];
+        if (!settings) {
+            [settingsRows] = await db.execute('SELECT * FROM settings WHERE id = 1');
+            settings = settingsRows[0] || {};
+        }
+
+        const newPdfPath = await generatePayslipPDF(payroll, employee, settings);
+        const resolvedPath = path.join(__dirname, newPdfPath);
+        
+        if (fs.existsSync(filePath)) {
+            return res.sendFile(filePath);
+        } else if (fs.existsSync(resolvedPath)) {
+            return res.sendFile(resolvedPath);
+        } else {
+            return res.status(404).send('Payslip file could not be generated');
+        }
+    } catch (err) {
+        console.error('Error auto-regenerating missing payslip PDF:', err);
+        return res.status(500).send('Error generating PDF');
+    }
+});
+
 app.use('/uploads', express.static('uploads'));
 
 const apiRoutes = require('./routes/api');
