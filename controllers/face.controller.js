@@ -76,6 +76,15 @@ const clearLockout = (userId) => {
     lockoutStore.delete(userId);
 };
 
+const isFaceRecognitionEnabledForCompany = async (companyId) => {
+    if (!companyId) return true;
+    const [rows] = await db.execute('SELECT face_recognition FROM kiosk_settings WHERE company_id = ?', [companyId]);
+    if (rows.length > 0 && Number(rows[0].face_recognition) === 0) {
+        return false;
+    }
+    return true;
+};
+
 exports.registerFace = async (req, res) => {
     try {
         const { employee_id, descriptor } = req.body;
@@ -85,9 +94,14 @@ exports.registerFace = async (req, res) => {
         }
 
         // Check if employee exists
-        const [emp] = await db.execute('SELECT id FROM employees WHERE id = ?', [employee_id]);
+        const [emp] = await db.execute('SELECT id, company_id FROM employees WHERE id = ?', [employee_id]);
         if (emp.length === 0) {
             return res.status(404).json({ message: 'Employee not found.' });
+        }
+
+        const isEnabled = await isFaceRecognitionEnabledForCompany(emp[0].company_id);
+        if (!isEnabled) {
+            return res.status(403).json({ message: 'Face recognition attendance has been disabled by your company administrator.' });
         }
 
         const descriptorJson = JSON.stringify(descriptor);
@@ -185,6 +199,11 @@ exports.checkIn = async (req, res) => {
         const employeeId = emp[0].id;
         const companyId = emp[0].company_id;
 
+        const isEnabled = await isFaceRecognitionEnabledForCompany(companyId);
+        if (!isEnabled) {
+            return res.status(403).json({ message: 'Face recognition attendance has been disabled by your company administrator.' });
+        }
+
         // --- GEOFENCE VALIDATION ---
         const geofence = await getGeofenceForEmployee(employeeId, companyId);
         if (geofence) {
@@ -258,6 +277,11 @@ exports.checkOut = async (req, res) => {
         const empRec = emp[0];
         const employeeId = empRec.id;
         const companyId = empRec.company_id;
+
+        const isEnabled = await isFaceRecognitionEnabledForCompany(companyId);
+        if (!isEnabled) {
+            return res.status(403).json({ message: 'Face recognition attendance has been disabled by your company administrator.' });
+        }
 
         // --- GEOFENCE VALIDATION ---
         const geofence = await getGeofenceForEmployee(employeeId, companyId);
