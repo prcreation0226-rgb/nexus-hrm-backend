@@ -187,12 +187,8 @@ exports.checkIn = async (req, res) => {
             return res.status(429).json({ message: `Too many failed attempts. Try again in ${lockoutStatus.minutesLeft} minutes.` });
         }
 
-        const { descriptor, livenessPassed, livenessScore, latitude, longitude } = req.body;
-        if (!descriptor || !Array.isArray(descriptor)) return res.status(400).json({ message: 'Invalid face descriptor.' });
-        if (!livenessPassed || livenessScore < 0.80) {
-            recordFailure(userId);
-            return res.status(403).json({ message: 'Anti-spoofing triggered. Real face not detected.' });
-        }
+        const { descriptor, livenessPassed, livenessScore, latitude, longitude, skipFace } = req.body;
+
         const [emp] = await db.execute('SELECT id, company_id FROM employees WHERE email = (SELECT email FROM users WHERE id = ?)', [userId]);
         if (emp.length === 0) return res.status(404).json({ message: 'Employee profile not found.' });
         
@@ -200,8 +196,45 @@ exports.checkIn = async (req, res) => {
         const companyId = emp[0].company_id;
 
         const isEnabled = await isFaceRecognitionEnabledForCompany(companyId);
-        if (!isEnabled) {
-            return res.status(403).json({ message: 'Face recognition attendance has been disabled by your company administrator.' });
+
+        // If face recognition is disabled or skipFace is requested when disabled
+        if (!isEnabled || skipFace) {
+            // --- GEOFENCE VALIDATION ---
+            const geofence = await getGeofenceForEmployee(employeeId, companyId);
+            if (geofence) {
+                if (!latitude || !longitude) {
+                    return res.status(403).json({ message: 'GPS coordinates are required to verify your location.' });
+                }
+                const distance = calculateDistance(latitude, longitude, geofence.latitude, geofence.longitude);
+                if (distance > geofence.radius) {
+                    return res.status(403).json({ message: `Location Verification Failed: You are outside the designated work area.` });
+                }
+            }
+            // ---------------------------
+
+            const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+            const now = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+            const { determinePunchStatus } = require('../utils/attendanceHelper');
+            const status = await determinePunchStatus(companyId, now);
+            
+            const [existing] = await db.execute('SELECT id FROM attendance WHERE employee_id = ? AND date = ?', [employeeId, today]);
+
+            if (existing.length === 0) {
+                await db.execute(
+                    'INSERT INTO attendance (employee_id, date, in_time, status, company_id) VALUES (?, ?, ?, ?, ?)',
+                    [employeeId, today, now, status, companyId]
+                );
+                clearLockout(userId);
+                return res.status(200).json({ success: true, message: 'Check-in successful.' });
+            } else {
+                return res.status(400).json({ success: false, message: 'Already checked in for today.' });
+            }
+        }
+
+        if (!descriptor || !Array.isArray(descriptor)) return res.status(400).json({ message: 'Invalid face descriptor.' });
+        if (!livenessPassed || livenessScore < 0.80) {
+            recordFailure(userId);
+            return res.status(403).json({ message: 'Anti-spoofing triggered. Real face not detected.' });
         }
 
         // --- GEOFENCE VALIDATION ---
@@ -266,12 +299,8 @@ exports.checkOut = async (req, res) => {
             return res.status(429).json({ message: `Too many failed attempts. Try again in ${lockoutStatus.minutesLeft} minutes.` });
         }
 
-        const { descriptor, livenessPassed, livenessScore, latitude, longitude } = req.body;
-        if (!descriptor || !Array.isArray(descriptor)) return res.status(400).json({ message: 'Invalid face descriptor.' });
-        if (!livenessPassed || livenessScore < 0.80) {
-            recordFailure(userId);
-            return res.status(403).json({ message: 'Anti-spoofing triggered. Real face not detected.' });
-        }
+        const { descriptor, livenessPassed, livenessScore, latitude, longitude, skipFace } = req.body;
+
         const [emp] = await db.execute('SELECT id, company_id FROM employees WHERE email = (SELECT email FROM users WHERE id = ?)', [userId]);
         if (emp.length === 0) return res.status(404).json({ message: 'Employee profile not found.' });
         const empRec = emp[0];
@@ -279,8 +308,51 @@ exports.checkOut = async (req, res) => {
         const companyId = empRec.company_id;
 
         const isEnabled = await isFaceRecognitionEnabledForCompany(companyId);
-        if (!isEnabled) {
-            return res.status(403).json({ message: 'Face recognition attendance has been disabled by your company administrator.' });
+
+        if (!isEnabled || skipFace) {
+            // --- GEOFENCE VALIDATION ---
+            const geofence = await getGeofenceForEmployee(employeeId, companyId);
+            if (geofence) {
+                if (!latitude || !longitude) {
+                    return res.status(403).json({ message: 'GPS coordinates are required to verify your location.' });
+                }
+                const distance = calculateDistance(latitude, longitude, geofence.latitude, geofence.longitude);
+                if (distance > geofence.radius) {
+                    return res.status(403).json({ message: `Location Verification Failed: You are outside the designated work area.` });
+                }
+            }
+            // ---------------------------
+
+            const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+            const now = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+            
+            const [existing] = await db.execute('SELECT id, in_time, out_time FROM attendance WHERE employee_id = ? AND date = ?', [employeeId, today]);
+
+            if (existing.length === 0) {
+                return res.status(400).json({ success: false, message: 'You have not checked in today.' });
+            } else if (!existing[0].out_time) {
+                const inTimeStr = existing[0].in_time; 
+                const inTime = moment.tz(inTimeStr, "YYYY-MM-DD HH:mm:ss", "Asia/Kolkata");
+                const outTime = moment.tz(now, "YYYY-MM-DD HH:mm:ss", "Asia/Kolkata");
+                
+                const diffMs = outTime.diff(inTime);
+                const totalHours = (diffMs / (1000 * 60 * 60)).toFixed(2);
+
+                await db.execute(
+                    'UPDATE attendance SET out_time = ?, total_hours = ? WHERE id = ?',
+                    [now, totalHours, existing[0].id]
+                );
+                clearLockout(userId);
+                return res.status(200).json({ success: true, message: 'Check-out successful.' });
+            } else {
+                return res.status(400).json({ success: false, message: 'Already checked out for today.' });
+            }
+        }
+
+        if (!descriptor || !Array.isArray(descriptor)) return res.status(400).json({ message: 'Invalid face descriptor.' });
+        if (!livenessPassed || livenessScore < 0.80) {
+            recordFailure(userId);
+            return res.status(403).json({ message: 'Anti-spoofing triggered. Real face not detected.' });
         }
 
         // --- GEOFENCE VALIDATION ---
