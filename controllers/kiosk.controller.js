@@ -23,11 +23,14 @@ exports.getKioskSettings = async (req, res) => {
             return res.json({
                 kiosk_name: 'Reception Tablet A',
                 branch: '',
-                status: 'Active'
+                status: 'Active',
+                face_recognition: 1
             });
         }
 
-        res.json(settings[0]);
+        const data = settings[0];
+        data.face_recognition = data.face_recognition !== undefined && data.face_recognition !== null ? Number(data.face_recognition) : 1;
+        res.json(data);
     } catch (err) {
         console.error('Error fetching kiosk settings:', err);
         res.status(500).json({ message: 'Server error fetching kiosk settings', error: err.message });
@@ -37,7 +40,9 @@ exports.getKioskSettings = async (req, res) => {
 exports.updateKioskSettings = async (req, res) => {
     try {
         const { company_id } = req.user;
-        const { kiosk_name, branch, status } = req.body;
+        const { kiosk_name, branch, status, face_recognition } = req.body;
+
+        const faceVal = (face_recognition === 1 || face_recognition === true || face_recognition === '1' || face_recognition === 'ON') ? 1 : 0;
 
         const [settings] = await db.execute(
             'SELECT id FROM kiosk_settings WHERE company_id = ?',
@@ -46,13 +51,13 @@ exports.updateKioskSettings = async (req, res) => {
 
         if (settings.length === 0) {
             await db.execute(
-                'INSERT INTO kiosk_settings (company_id, kiosk_name, branch, status) VALUES (?, ?, ?, ?)',
-                [company_id, kiosk_name, branch, status]
+                'INSERT INTO kiosk_settings (company_id, kiosk_name, branch, status, face_recognition) VALUES (?, ?, ?, ?, ?)',
+                [company_id, kiosk_name, branch, status, faceVal]
             );
         } else {
             await db.execute(
-                'UPDATE kiosk_settings SET kiosk_name = ?, branch = ?, status = ? WHERE company_id = ?',
-                [kiosk_name, branch, status, company_id]
+                'UPDATE kiosk_settings SET kiosk_name = ?, branch = ?, status = ?, face_recognition = ? WHERE company_id = ?',
+                [kiosk_name, branch, status, faceVal, company_id]
             );
         }
 
@@ -151,6 +156,15 @@ exports.kioskFacePunch = async (req, res) => {
     try {
         const { company_id } = req.user;
         const { descriptor, livenessPassed, livenessScore } = req.body;
+
+        // Check if Face Recognition is enabled for this company
+        const [kioskConf] = await db.execute(
+            'SELECT face_recognition FROM kiosk_settings WHERE company_id = ?',
+            [company_id]
+        );
+        if (kioskConf.length > 0 && Number(kioskConf[0].face_recognition) === 0) {
+            return res.status(403).json({ message: 'Face recognition attendance is disabled for this company.' });
+        }
 
         if (!descriptor || !Array.isArray(descriptor)) {
             return res.status(400).json({ message: 'Invalid face descriptor.' });

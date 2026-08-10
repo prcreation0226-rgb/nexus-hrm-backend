@@ -555,10 +555,21 @@ const initDB = async () => {
                 kiosk_name VARCHAR(150) DEFAULT 'Reception Tablet A',
                 branch VARCHAR(150) DEFAULT '',
                 status ENUM('Active','Inactive') DEFAULT 'Active',
+                face_recognition TINYINT(1) DEFAULT 1,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
             )
         `);
+
+        try {
+            const [cols] = await db.execute("SHOW COLUMNS FROM kiosk_settings LIKE 'face_recognition'");
+            if (cols.length === 0) {
+                await db.execute("ALTER TABLE kiosk_settings ADD COLUMN face_recognition TINYINT(1) DEFAULT 1");
+                console.log('✅ Added face_recognition column to kiosk_settings table');
+            }
+        } catch (colErr) {
+            console.error('Error adding face_recognition column to kiosk_settings:', colErr);
+        }
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS email_logs (
