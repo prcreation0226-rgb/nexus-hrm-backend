@@ -11,14 +11,31 @@ const isAdmin = (role) => {
 // Get the next available IDs for new employee
 exports.getNextIds = async (req, res) => {
     try {
-        const [[lastEmp]] = await db.execute("SELECT custom_id FROM employees WHERE custom_id REGEXP '^[0-9]+$' ORDER BY CAST(custom_id AS UNSIGNED) DESC LIMIT 1");
+        let empSql = "SELECT custom_id FROM employees WHERE custom_id REGEXP '^[0-9]+$'";
+        let machineSql = "SELECT machine_id FROM employees WHERE machine_id REGEXP '^[0-9]+$'";
+        let params = [];
+
+        if (req.user && req.user.role !== 'MasterAdmin' && req.user.company_id) {
+            empSql += " AND company_id = ?";
+            machineSql += " AND company_id = ?";
+            params.push(req.user.company_id);
+        }
+
+        empSql += " ORDER BY CAST(custom_id AS UNSIGNED) DESC LIMIT 1";
+        machineSql += " ORDER BY CAST(machine_id AS UNSIGNED) DESC LIMIT 1";
+
+        const [[lastEmp]] = await db.execute(empSql, params);
         const nextCustomId = lastEmp && lastEmp.custom_id ? (parseInt(lastEmp.custom_id) + 1) : 1001;
 
-        const [[lastMachine]] = await db.execute("SELECT machine_id FROM employees WHERE machine_id REGEXP '^[0-9]+$' ORDER BY CAST(machine_id AS UNSIGNED) DESC LIMIT 1");
+        const [[lastMachine]] = await db.execute(machineSql, params);
         const nextMachineId = lastMachine && lastMachine.machine_id ? (parseInt(lastMachine.machine_id) + 1) : 1001;
 
-        res.json({ nextCustomId, nextMachineId });
+        res.json({ 
+            nextCustomId: String(nextCustomId), 
+            nextMachineId: String(nextMachineId) 
+        });
     } catch (err) {
+        console.error('Error in getNextIds:', err);
         res.status(500).json({ message: 'Error fetching next IDs', error: err.message });
     }
 };
@@ -88,13 +105,27 @@ exports.addEmployee = async (req, res) => {
         }
 
         // --- 1. Auto Generate Magic Numbers ---
-        const [[lastEmp]] = await db.execute("SELECT custom_id FROM employees WHERE custom_id REGEXP '^[0-9]+$' ORDER BY CAST(custom_id AS UNSIGNED) DESC LIMIT 1");
+        let empSql = "SELECT custom_id FROM employees WHERE custom_id REGEXP '^[0-9]+$'";
+        let machineSql = "SELECT machine_id FROM employees WHERE machine_id REGEXP '^[0-9]+$'";
+        let idParams = [];
+
+        if (req.user && req.user.role !== 'MasterAdmin' && req.user.company_id) {
+            empSql += " AND company_id = ?";
+            machineSql += " AND company_id = ?";
+            idParams.push(req.user.company_id);
+        }
+
+        empSql += " ORDER BY CAST(custom_id AS UNSIGNED) DESC LIMIT 1";
+        machineSql += " ORDER BY CAST(machine_id AS UNSIGNED) DESC LIMIT 1";
+
+        const [[lastEmp]] = await db.execute(empSql, idParams);
         const nextCustomId = lastEmp && lastEmp.custom_id ? (parseInt(lastEmp.custom_id) + 1) : 1001;
 
-        const [[lastMachine]] = await db.execute("SELECT machine_id FROM employees WHERE machine_id REGEXP '^[0-9]+$' ORDER BY CAST(machine_id AS UNSIGNED) DESC LIMIT 1");
+        const [[lastMachine]] = await db.execute(machineSql, idParams);
         const nextMachineId = lastMachine && lastMachine.machine_id ? (parseInt(lastMachine.machine_id) + 1) : 1001;
 
-        const finalCustomId = custom_id || nextCustomId.toString();
+        const finalCustomId = (custom_id && String(custom_id).trim() !== '') ? String(custom_id).trim() : nextCustomId.toString();
+        const finalMachineId = (machine_id && String(machine_id).trim() !== '') ? String(machine_id).trim() : nextMachineId.toString();
 
         // 1.5 Check for duplicate Employee ID
         const [dupCheck] = await db.execute('SELECT id FROM employees WHERE custom_id = ? AND company_id = ?', [finalCustomId, req.user.company_id]);
@@ -115,7 +146,7 @@ exports.addEmployee = async (req, res) => {
         const empSql = 'INSERT INTO employees (machine_id, custom_id, name, role, department, shift, email, phone, salary_rate, salary_type, joined_date, date_of_birth, photo, uif_number, advance_balance, signature, created_by, is_uif_registered, company_id, assigned_branch, cpf_applicable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
         const formattedDOB = date_of_birth ? date_of_birth.split('T')[0] : null;
         const empValues = [
-            nextMachineId.toString(),
+            finalMachineId,
             finalCustomId,
             name || '',
             dbRole,
