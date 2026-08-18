@@ -443,6 +443,18 @@ const initDB = async () => {
             console.error('⚠️ Failed to update null cpf_applicable values:', cpfErr.message);
         }
 
+        // Clean up any orphaned users from deleted companies
+        try {
+            await db.execute(`
+                DELETE FROM users 
+                WHERE company_id IS NOT NULL 
+                  AND role NOT IN ('superadmin', 'Master Admin', 'system')
+                  AND company_id NOT IN (SELECT id FROM companies)
+            `);
+        } catch (orphanErr) {
+            console.error('⚠️ Failed to cleanup orphaned users:', orphanErr.message);
+        }
+
         // 3. Seed Default Admin if no users exist
 
         // Ensure company_requests table exists

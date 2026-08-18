@@ -75,6 +75,25 @@ exports.createCompany = async (req, res) => {
         await connection.beginTransaction();
         const { company_name, owner_name, email, phone, plan, employee_limit, status, password } = req.body;
         
+        if (!company_name || !email) {
+            await connection.rollback();
+            return res.status(400).json({ error: 'Company name and email are required.' });
+        }
+
+        // Check if a user with this email already exists
+        const [existingUser] = await connection.execute('SELECT id, company_id FROM users WHERE email = ?', [email]);
+        if (existingUser.length > 0) {
+            const existingCompId = existingUser[0].company_id;
+            const [compCheck] = await connection.execute('SELECT id FROM companies WHERE id = ?', [existingCompId]);
+            if (compCheck.length === 0) {
+                // Orphaned user from a previously deleted company — clean it up safely
+                await connection.execute('DELETE FROM users WHERE id = ?', [existingUser[0].id]);
+            } else {
+                await connection.rollback();
+                return res.status(400).json({ error: `The email "${email}" is already registered to an active company.` });
+            }
+        }
+
         // 1. Insert Company
         const [companyResult] = await connection.execute(
             'INSERT INTO companies (company_name, owner_name, email, phone, plan, employee_limit, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -88,7 +107,7 @@ exports.createCompany = async (req, res) => {
             const hashedPassword = await bcrypt.hash(password, 10);
             await connection.execute(
                 'INSERT INTO users (name, email, password, role, company_id) VALUES (?, ?, ?, ?, ?)',
-                [owner_name, email, hashedPassword, 'admin', companyId]
+                [owner_name || company_name, email, hashedPassword, 'admin', companyId]
             );
         }
 
@@ -104,6 +123,7 @@ exports.createCompany = async (req, res) => {
         res.json({ message: 'Company created', id: companyId });
     } catch (err) {
         await connection.rollback();
+        console.error('Error creating company:', err);
         res.status(500).json({ error: err.message });
     } finally {
         connection.release();
@@ -158,11 +178,33 @@ exports.updateCompany = async (req, res) => {
 };
 
 exports.deleteCompany = async (req, res) => {
+    const connection = await db.getConnection();
     try {
-        await db.execute('DELETE FROM companies WHERE id=?', [req.params.id]);
-        res.json({ message: 'Company deleted' });
+        await connection.beginTransaction();
+        const companyId = req.params.id;
+
+        // Cascade delete all records associated with this company
+        await connection.execute('DELETE FROM users WHERE company_id = ? AND role NOT IN ("superadmin", "Master Admin", "system")', [companyId]);
+        await connection.execute('DELETE FROM employees WHERE company_id = ?', [companyId]);
+        await connection.execute('DELETE FROM subscriptions WHERE company_id = ?', [companyId]);
+        await connection.execute('DELETE FROM company_settings WHERE company_id = ?', [companyId]);
+        await connection.execute('DELETE FROM geofences WHERE company_id = ?', [companyId]);
+        await connection.execute('DELETE FROM company_requests WHERE company_id = ?', [companyId]);
+        await connection.execute('DELETE FROM companies WHERE id = ?', [companyId]);
+
+        await connection.commit();
+
+        await audit.logAction(req.user.id, 'DELETE COMPANY', companyId, JSON.stringify({
+            info: `Deleted company ID: ${companyId}`
+        }));
+
+        res.json({ message: 'Company and associated records deleted successfully' });
     } catch (err) {
+        await connection.rollback();
+        console.error('Error deleting company:', err);
         res.status(500).json({ error: err.message });
+    } finally {
+        connection.release();
     }
 };
 
