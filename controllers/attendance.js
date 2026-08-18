@@ -71,7 +71,7 @@ exports.getAttendance = async (req, res) => {
             else if (row.salary_type === 'monthly') earning = hours > 0 ? (rate / 30) : 0;
             else if (row.salary_type === 'daily') earning = hours > 0 ? rate : 0;
             const uif = earning * 0.01;
-            const branch = row.branch_name || row.assigned_locations || null;
+            const branch = row.branch_name || null;
             return { ...row, branch_name: branch, earning: earning.toFixed(2), uif: uif.toFixed(2) };
         });
         res.json(enhancedRows);
