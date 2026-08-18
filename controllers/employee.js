@@ -456,34 +456,69 @@ exports.adminResetPassword = async (req, res) => {
 // --- BULK EMPLOYEE UPLOAD & TEMPLATE ---
 const xlsx = require('xlsx');
 
-// Helper: Parse any date format (YYYY-MM-DD, DD/MM/YYYY, Excel serial)
+// Helper: Parse any date format (YYYY-MM-DD, DD/MM/YYYY, Excel Date Object, Excel serial number)
 function parseExcelDate(val) {
-    if (!val) return null;
-    if (val instanceof Date && !isNaN(val)) {
-        return val.toISOString().split('T')[0];
+    if (val === null || val === undefined || val === '') return null;
+    
+    // 1. Date object (Excel date object)
+    if (val instanceof Date && !isNaN(val.getTime())) {
+        const y = val.getFullYear();
+        const m = String(val.getMonth() + 1).padStart(2, '0');
+        const d = String(val.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
     }
-    if (typeof val === 'number') {
-        const utc_days = Math.floor(val - 25569);
-        const date_info = new Date(utc_days * 86400 * 1000);
-        if (!isNaN(date_info.getTime())) {
-            return date_info.toISOString().split('T')[0];
-        }
+
+    // 2. Excel numeric serial (e.g. 33769, 44197, '33769')
+    const strVal = String(val).trim();
+    const numVal = Number(strVal);
+    if (!isNaN(numVal) && typeof val !== 'boolean' && numVal > 1000 && numVal < 100000 && /^\d+(\.\d+)?$/.test(strVal)) {
+        try {
+            const parsedCode = xlsx.SSF.parse_date_code(numVal);
+            if (parsedCode && parsedCode.y && parsedCode.m && parsedCode.d) {
+                const y = String(parsedCode.y).padStart(4, '0');
+                const m = String(parsedCode.m).padStart(2, '0');
+                const d = String(parsedCode.d).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            }
+        } catch (e) {}
     }
-    const str = String(val).trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-        return str;
+
+    // 3. String Regex Checks
+    // YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
+    const ymd = strVal.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+    if (ymd) {
+        const y = ymd[1];
+        const m = ymd[2].padStart(2, '0');
+        const d = ymd[3].padStart(2, '0');
+        return `${y}-${m}-${d}`;
     }
-    const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+
+    // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+    const dmy = strVal.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
     if (dmy) {
-        const day = dmy[1].padStart(2, '0');
-        const month = dmy[2].padStart(2, '0');
-        const year = dmy[3];
-        return `${year}-${month}-${day}`;
+        let first = parseInt(dmy[1], 10);
+        let second = parseInt(dmy[2], 10);
+        let year = dmy[3];
+        
+        let day = first;
+        let month = second;
+        if (second > 12 && first <= 12) {
+            day = second;
+            month = first;
+        }
+
+        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
-    const parsed = new Date(str);
+
+    // 4. Fallback: JavaScript Date parser (e.g. "15-Jun-1992", "June 15, 1992")
+    const parsed = new Date(strVal);
     if (!isNaN(parsed.getTime())) {
-        return parsed.toISOString().split('T')[0];
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, '0');
+        const d = String(parsed.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
     }
+
     return null;
 }
 
@@ -664,21 +699,26 @@ exports.bulkUploadEmployees = async (req, res) => {
             const rowNumber = i + 2; // Row 1 is header, data starts on Row 2
 
             // Normalize column headers
-            const getVal = (...keys) => {
+            const getRaw = (...keys) => {
                 for (const key of keys) {
                     const match = Object.keys(raw).find(k => k.trim().toLowerCase() === key.toLowerCase());
                     if (match && raw[match] !== undefined && raw[match] !== null) {
-                        return String(raw[match]).trim();
+                        return raw[match];
                     }
                 }
                 return '';
             };
 
+            const getVal = (...keys) => {
+                const val = getRaw(...keys);
+                return (val !== null && val !== undefined) ? String(val).trim() : '';
+            };
+
             const name = getVal('Full Name', 'Name', 'full_name', 'Employee Name', 'Employee');
             const email = getVal('Email', 'email', 'Email Address', 'Email ID');
             const phone = getVal('Phone', 'phone', 'Phone Number', 'Contact', 'Mobile');
-            const rawDob = getVal('Date of Birth', 'DOB', 'Birth Date', 'date_of_birth', 'BirthDate');
-            const rawJoinedDate = getVal('Joining Date', 'Join Date', 'joined_date', 'Date of Joining', 'JoiningDate');
+            const rawDob = getRaw('Date of Birth', 'DOB', 'Birth Date', 'date_of_birth', 'BirthDate');
+            const rawJoinedDate = getRaw('Joining Date', 'Join Date', 'joined_date', 'Date of Joining', 'JoiningDate');
             const department = getVal('Department', 'Dept', 'department') || 'General';
             const designation = getVal('Designation', 'Role', 'designation', 'role', 'Job Title') || 'Staff / Employee';
             const rawSalary = getVal('Salary', 'salary', 'Basic Salary', 'Salary Rate', 'rate', 'Monthly Salary');
