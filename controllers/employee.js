@@ -46,6 +46,7 @@ exports.getAllEmployees = async (req, res) => {
         let query = `
             SELECT e.*, 
                    CASE WHEN fe.id IS NOT NULL THEN 1 ELSE 0 END as has_face_registered,
+                   COALESCE((SELECT GROUP_CONCAT(DISTINCT g.name SEPARATOR ', ') FROM employee_locations el JOIN geofences g ON g.id = el.location_id WHERE el.employee_id = e.id), e.assigned_branch) as assigned_locations,
                    COALESCE((SELECT SUM(COALESCE(p.cpf_employee, p.uif_amount)) FROM payroll p WHERE p.employee_id = e.id AND p.status = 'paid'), 0) as total_uif_collected,
                    COALESCE((SELECT SUM(COALESCE(p.cpf_employee, p.uif_amount)) FROM payroll p WHERE p.employee_id = e.id AND p.status = 'paid'), 0) as total_cpf_employee,
                    COALESCE((SELECT SUM(COALESCE(p.cpf_employer, 0)) FROM payroll p WHERE p.employee_id = e.id AND p.status = 'paid'), 0) as total_cpf_employer,
@@ -133,6 +134,39 @@ exports.addEmployee = async (req, res) => {
             return res.status(400).json({ message: `Employee ID ${finalCustomId} is already in use. Please use a unique ID.` });
         }
 
+        // 1.6 Parse & Validate Assigned Work Locations (Minimum 1 is mandatory)
+        let locationIds = [];
+        if (req.body.location_ids) {
+            if (Array.isArray(req.body.location_ids)) {
+                locationIds = req.body.location_ids.map(Number).filter(n => !isNaN(n) && n > 0);
+            } else if (typeof req.body.location_ids === 'string') {
+                try {
+                    const parsed = JSON.parse(req.body.location_ids);
+                    if (Array.isArray(parsed)) locationIds = parsed.map(Number).filter(n => !isNaN(n) && n > 0);
+                    else locationIds = req.body.location_ids.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0);
+                } catch(e) {
+                    locationIds = req.body.location_ids.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0);
+                }
+            }
+        }
+
+        if (locationIds.length === 0) {
+            return res.status(400).json({ message: 'Please assign at least one work location to the employee.' });
+        }
+
+        // Validate that all locationIds exist for this company and are active
+        const locPlaceholders = locationIds.map(() => '?').join(',');
+        const [validLocs] = await db.execute(
+            `SELECT id, name FROM geofences WHERE id IN (${locPlaceholders}) AND company_id = ? AND status = "Active"`,
+            [...locationIds, req.user.company_id]
+        );
+
+        if (validLocs.length !== locationIds.length) {
+            return res.status(400).json({ message: 'One or more selected work locations are invalid or inactive.' });
+        }
+
+        const primaryBranchName = validLocs[0].name;
+
         // 2. Insert into employees table
         const formattedJoinedDate = joined_date ? joined_date.split('T')[0] : new Date().toISOString().split('T')[0];
 
@@ -165,7 +199,7 @@ exports.addEmployee = async (req, res) => {
             creatorId,
             (is_uif_registered === 'true' || is_uif_registered === true || is_uif_registered === 1 || is_uif_registered === '1') ? 1 : 0,
             req.user.company_id,
-            req.body.assigned_branch || null,
+            primaryBranchName,
             isCpfApplicable
         ];
 
@@ -176,6 +210,14 @@ exports.addEmployee = async (req, res) => {
 
         const employeeId = empResult.insertId;
         const hashedPassword = await bcrypt.hash(password || '123456', 10);
+
+        // Insert employee location mappings
+        for (const locId of locationIds) {
+            await db.execute(
+                'INSERT INTO employee_locations (company_id, employee_id, location_id) VALUES (?, ?, ?)',
+                [req.user.company_id, employeeId, locId]
+            );
+        }
 
         // 3. Create login user
         const finalRole = isAdmin(role) ? role.toLowerCase() : 'employee';
@@ -209,7 +251,23 @@ exports.getEmployeeById = async (req, res) => {
             return res.status(403).json({ message: 'Access denied to this record' });
         }
 
-        res.json(rows[0]);
+        const empData = rows[0];
+
+        // Fetch assigned work locations
+        const [locRows] = await db.execute(
+            `SELECT el.location_id, g.name as location_name, g.address, g.radius, g.status
+             FROM employee_locations el
+             JOIN geofences g ON g.id = el.location_id
+             WHERE el.employee_id = ? AND el.company_id = ?
+             ORDER BY g.name ASC`,
+            [req.params.id, empData.company_id]
+        );
+
+        empData.location_ids = locRows.map(r => r.location_id);
+        empData.locations = locRows;
+        empData.assigned_locations = locRows.map(r => r.location_name).join(', ');
+
+        res.json(empData);
     } catch (err) {
         console.error('❌ SQL Error (getEmployeeById):', err);
         res.status(500).json({ message: 'Server error', error: err.message });
@@ -236,8 +294,51 @@ exports.updateEmployee = async (req, res) => {
         const [existing] = await db.execute('SELECT company_id FROM employees WHERE id = ?', [id]);
         if (existing.length === 0) return res.status(404).json({ message: 'Employee not found' });
 
-        if (req.user.role !== 'MasterAdmin' && existing[0].company_id !== req.user.company_id) {
+        const companyId = existing[0].company_id;
+
+        if (req.user.role !== 'MasterAdmin' && companyId !== req.user.company_id) {
             return res.status(403).json({ message: 'Cannot edit staff from another company' });
+        }
+
+        // 1.5 Handle Assigned Locations if passed
+        if (data.location_ids !== undefined) {
+            let locationIds = [];
+            if (Array.isArray(data.location_ids)) {
+                locationIds = data.location_ids.map(Number).filter(n => !isNaN(n) && n > 0);
+            } else if (typeof data.location_ids === 'string') {
+                try {
+                    const parsed = JSON.parse(data.location_ids);
+                    if (Array.isArray(parsed)) locationIds = parsed.map(Number).filter(n => !isNaN(n) && n > 0);
+                    else locationIds = data.location_ids.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0);
+                } catch(e) {
+                    locationIds = data.location_ids.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0);
+                }
+            }
+
+            if (locationIds.length === 0) {
+                return res.status(400).json({ message: 'Please assign at least one work location to the employee.' });
+            }
+
+            const locPlaceholders = locationIds.map(() => '?').join(',');
+            const [validLocs] = await db.execute(
+                `SELECT id, name FROM geofences WHERE id IN (${locPlaceholders}) AND company_id = ? AND status = "Active"`,
+                [...locationIds, companyId]
+            );
+
+            if (validLocs.length !== locationIds.length) {
+                return res.status(400).json({ message: 'One or more selected work locations are invalid or inactive.' });
+            }
+
+            // Sync employee_locations
+            await db.execute('DELETE FROM employee_locations WHERE employee_id = ? AND company_id = ?', [id, companyId]);
+            for (const locId of locationIds) {
+                await db.execute(
+                    'INSERT INTO employee_locations (company_id, employee_id, location_id) VALUES (?, ?, ?)',
+                    [companyId, id, locId]
+                );
+            }
+
+            data.assigned_branch = validLocs[0].name;
         }
 
         // 2. Build Dynamic Update for Employees Table
@@ -542,6 +643,7 @@ function parseExcelDate(val) {
 // Download Sample Template (.xlsx)
 exports.downloadEmployeeTemplate = async (req, res) => {
     try {
+        const companyId = req.user.company_id;
         const wb = xlsx.utils.book_new();
         const headers = [
             'Full Name',
@@ -549,43 +651,71 @@ exports.downloadEmployeeTemplate = async (req, res) => {
             'Phone',
             'Date of Birth',
             'Joining Date',
-            'Department',
-            'Designation',
             'Salary',
             'Salary Type',
             'Address',
             'Employee ID',
-            'CPF Applicable'
+            'CPF Applicable',
+            'Assigned Locations'
         ];
+
+        // Fetch active company geofences for dynamic template sample
+        let sampleLoc1 = 'Main Office';
+        let sampleLoc2 = 'Main Office, Branch B';
+
+        if (companyId) {
+            const [compLocs] = await db.execute(
+                'SELECT name FROM geofences WHERE company_id = ? AND status = "Active" LIMIT 2',
+                [companyId]
+            );
+            if (compLocs.length === 1) {
+                sampleLoc1 = compLocs[0].name;
+                sampleLoc2 = compLocs[0].name;
+            } else if (compLocs.length >= 2) {
+                sampleLoc1 = compLocs[0].name;
+                sampleLoc2 = `${compLocs[0].name}, ${compLocs[1].name}`;
+            }
+        }
 
         const sampleRows = [
             [
-                'John Doe',
-                'john.doe@company.com',
+                'Rahul Sharma',
+                'rahul@test.com',
                 '+65 9123 4567',
-                '1992-06-15',
+                '1995-05-12',
                 new Date().toISOString().split('T')[0],
-                'Operations',
-                'Staff / Employee',
-                '3200',
+                '3000',
                 'monthly',
-                'Block 123 Orchard Road, #05-01',
-                '',
-                'Yes'
+                '123 Orchard Road, Singapore',
+                '1001',
+                'Yes',
+                sampleLoc1
             ],
             [
-                'Jane Smith',
-                'jane.smith@company.com',
+                'Amit Patel',
+                'amit@test.com',
                 '+65 9876 5432',
-                '1995-11-20',
+                '1993-08-20',
                 new Date().toISOString().split('T')[0],
-                'Sales',
-                'Staff / Employee',
-                '20',
+                '3500',
+                'monthly',
+                '456 Jurong West, Singapore',
+                '1002',
+                'Yes',
+                sampleLoc2
+            ],
+            [
+                'John Tan',
+                'john@test.com',
+                '+65 8123 9999',
+                '1998-11-05',
+                new Date().toISOString().split('T')[0],
+                '25',
                 'hourly',
-                'Block 456 Jurong West, #08-12',
-                '',
-                'No'
+                '789 Woodlands Ave, Singapore',
+                '1003',
+                'No',
+                sampleLoc1
             ]
         ];
 
@@ -598,13 +728,12 @@ exports.downloadEmployeeTemplate = async (req, res) => {
             { wch: 18 }, // Phone
             { wch: 16 }, // Date of Birth
             { wch: 16 }, // Joining Date
-            { wch: 16 }, // Department
-            { wch: 18 }, // Designation
             { wch: 12 }, // Salary
             { wch: 14 }, // Salary Type
             { wch: 32 }, // Address
             { wch: 15 }, // Employee ID
-            { wch: 16 }  // CPF Applicable
+            { wch: 16 }, // CPF Applicable
+            { wch: 30 }  // Assigned Locations
         ];
 
         xlsx.utils.book_append_sheet(wb, ws, 'Employees_Template');
@@ -657,6 +786,16 @@ exports.bulkUploadEmployees = async (req, res) => {
                 }
             }
         }
+
+        // Fetch company's active geofences to map location names
+        const [compGeofences] = await db.execute(
+            'SELECT id, name FROM geofences WHERE company_id = ? AND status = "Active"',
+            [companyId]
+        );
+        const geofenceMap = new Map();
+        compGeofences.forEach(g => {
+            geofenceMap.set(g.name.trim().toLowerCase(), { id: g.id, name: g.name });
+        });
 
         // Parse Spreadsheet Buffer
         let workbook;
@@ -731,13 +870,12 @@ exports.bulkUploadEmployees = async (req, res) => {
             const phone = getVal('Phone', 'phone', 'Phone Number', 'Contact', 'Mobile');
             const rawDob = getVal('Date of Birth', 'DOB', 'Birth Date', 'date_of_birth', 'BirthDate');
             const rawJoinedDate = getVal('Joining Date', 'Join Date', 'joined_date', 'Date of Joining', 'JoiningDate');
-            const department = getVal('Department', 'Dept', 'department') || 'General';
-            const designation = getVal('Designation', 'Role', 'designation', 'role', 'Job Title') || 'Staff / Employee';
             const rawSalary = getVal('Salary', 'salary', 'Basic Salary', 'Salary Rate', 'rate', 'Monthly Salary');
-            const salaryType = getVal('Salary Type', 'salary_type', 'SalaryType', 'Payment Type') || 'hourly';
+            const salaryType = getVal('Salary Type', 'salary_type', 'SalaryType', 'Payment Type') || 'monthly';
             const address = getVal('Address', 'address', 'Residential Address');
             const customIdInput = getVal('Employee ID', 'custom_id', 'Emp ID', 'ID', 'EmployeeID');
             const rawCpf = getVal('CPF Applicable', 'CPF', 'cpf_applicable', 'CPF Eligibility', 'CPF Eligible');
+            const rawLocations = getVal('Assigned Locations', 'Assigned Location', 'Work Locations', 'Work Location', 'Locations', 'Location');
 
             // --- Validations ---
             if (!name) {
@@ -774,6 +912,36 @@ exports.bulkUploadEmployees = async (req, res) => {
                 continue;
             }
 
+            // Location Validation
+            if (!rawLocations) {
+                errors.push({ row: rowNumber, name, email, reason: 'Missing required field: Assigned Locations' });
+                continue;
+            }
+
+            const locTokens = rawLocations.split(',').map(s => s.trim()).filter(Boolean);
+            if (locTokens.length === 0) {
+                errors.push({ row: rowNumber, name, email, reason: 'Missing required field: Assigned Locations' });
+                continue;
+            }
+
+            const rowLocationIds = [];
+            let invalidLoc = null;
+            for (const token of locTokens) {
+                const found = geofenceMap.get(token.toLowerCase());
+                if (!found) {
+                    invalidLoc = token;
+                    break;
+                }
+                if (!rowLocationIds.includes(found.id)) {
+                    rowLocationIds.push(found.id);
+                }
+            }
+
+            if (invalidLoc) {
+                errors.push({ row: rowNumber, name, email, reason: `Location "${invalidLoc}" not found.` });
+                continue;
+            }
+
             // Joining Date
             const formattedJoinedDate = parseExcelDate(rawJoinedDate) || new Date().toISOString().split('T')[0];
 
@@ -785,9 +953,9 @@ exports.bulkUploadEmployees = async (req, res) => {
             }
 
             // Salary Type
-            let dbSalaryType = 'hourly';
+            let dbSalaryType = 'monthly';
             const lowerSalType = salaryType.toLowerCase();
-            if (lowerSalType.includes('month')) dbSalaryType = 'monthly';
+            if (lowerSalType.includes('hour')) dbSalaryType = 'hourly';
             else if (lowerSalType.includes('day') || lowerSalType.includes('daily')) dbSalaryType = 'daily';
 
             // Custom ID / Machine ID resolution
@@ -818,15 +986,18 @@ exports.bulkUploadEmployees = async (req, res) => {
                 isCpf = 0;
             }
 
+            // Primary branch name for backwards compatibility
+            const primaryBranchName = locTokens[0];
+
             // --- Database Insertion ---
             try {
-                const empSql = 'INSERT INTO employees (machine_id, custom_id, name, role, department, shift, email, phone, salary_rate, salary_type, joined_date, date_of_birth, uif_number, advance_balance, created_by, is_uif_registered, company_id, cpf_applicable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+                const empSql = 'INSERT INTO employees (machine_id, custom_id, name, role, department, shift, email, phone, salary_rate, salary_type, joined_date, date_of_birth, uif_number, advance_balance, created_by, is_uif_registered, company_id, assigned_branch, cpf_applicable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
                 const empValues = [
                     finalMachineId,
                     finalCustomId,
                     name,
                     'employee',
-                    department,
+                    'General',
                     'Morning Shift',
                     email,
                     phone || '',
@@ -839,11 +1010,20 @@ exports.bulkUploadEmployees = async (req, res) => {
                     creatorId,
                     1,
                     companyId,
+                    primaryBranchName,
                     isCpf
                 ];
 
                 const [empResult] = await db.execute(empSql, empValues);
                 const newEmpId = empResult.insertId;
+
+                // Insert employee location mappings
+                for (const locId of rowLocationIds) {
+                    await db.execute(
+                        'INSERT INTO employee_locations (company_id, employee_id, location_id) VALUES (?, ?, ?)',
+                        [companyId, newEmpId, locId]
+                    );
+                }
 
                 // Create user login with must_change_password = 1 (Force change password on first login)
                 const userSql = 'INSERT INTO users (employee_id, email, password, role, name, created_by, company_id, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?, 1)';
@@ -859,7 +1039,8 @@ exports.bulkUploadEmployees = async (req, res) => {
                     id: newEmpId,
                     custom_id: finalCustomId,
                     name: name,
-                    email: email
+                    email: email,
+                    assigned_locations: locTokens.join(', ')
                 });
             } catch (insertErr) {
                 console.error(`Row ${rowNumber} insert error:`, insertErr);

@@ -539,6 +539,19 @@ const initDB = async () => {
         `);
 
         await db.execute(`
+            CREATE TABLE IF NOT EXISTS employee_locations (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_id BIGINT,
+                employee_id INT NOT NULL,
+                location_id INT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+                FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+                FOREIGN KEY (location_id) REFERENCES geofences(id) ON DELETE CASCADE
+            )
+        `);
+
+        await db.execute(`
             CREATE TABLE IF NOT EXISTS claims (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 company_id BIGINT,

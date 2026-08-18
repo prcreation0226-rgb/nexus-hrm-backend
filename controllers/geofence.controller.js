@@ -22,30 +22,27 @@ exports.getAssignedGeofence = async (req, res) => {
             return res.status(400).json({ message: 'User is not an employee' });
         }
 
-        // Get employee's assigned branch
-        const [employees] = await db.execute(
-            'SELECT assigned_branch FROM employees WHERE id = ? AND company_id = ?',
+        // Query all assigned active locations from employee_locations
+        const [locations] = await db.execute(
+            `SELECT g.id, g.name, g.address, g.latitude, g.longitude, g.radius, g.status
+             FROM geofences g
+             INNER JOIN employee_locations el ON el.location_id = g.id
+             WHERE el.employee_id = ? AND el.company_id = ? AND g.status = "Active"
+             ORDER BY g.name ASC`,
             [employee_id, company_id]
         );
 
-        if (employees.length === 0 || !employees[0].assigned_branch) {
-            // Return the first active geofence as fallback if no branch assigned
-            const [geofences] = await db.execute(
-                'SELECT * FROM geofences WHERE company_id = ? AND status = "Active" LIMIT 1',
-                [company_id]
-            );
-            return res.json(geofences[0] || null);
+        if (locations.length === 0) {
+            // Strict rule: No fallback to company active locations! Return null / unassigned
+            return res.json(null);
         }
 
-        const assignedBranch = employees[0].assigned_branch;
-
-        // Find geofence by branch name
-        const [geofences] = await db.execute(
-            'SELECT * FROM geofences WHERE company_id = ? AND name = ? AND status = "Active"',
-            [company_id, assignedBranch]
-        );
-
-        res.json(geofences[0] || null);
+        // Return primary location fields at root for backward-compatibility + full assigned_locations array
+        const primary = locations[0];
+        res.json({
+            ...primary,
+            assigned_locations: locations
+        });
 
     } catch (err) {
         console.error('Error fetching assigned geofence:', err);
@@ -92,6 +89,12 @@ exports.deleteGeofence = async (req, res) => {
     try {
         const { id } = req.params;
         const { company_id } = req.user;
+
+        // Clean up mappings first
+        await db.execute(
+            'DELETE FROM employee_locations WHERE location_id = ? AND company_id = ?',
+            [id, company_id]
+        );
 
         await db.execute(
             'DELETE FROM geofences WHERE id = ? AND company_id = ?',

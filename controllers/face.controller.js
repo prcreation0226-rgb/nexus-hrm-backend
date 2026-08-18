@@ -22,30 +22,57 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
     return R * c;
 };
 
-// Fetch assigned geofence for an employee
-const getGeofenceForEmployee = async (employeeId, companyId) => {
-    const [employees] = await db.execute(
-        'SELECT assigned_branch FROM employees WHERE id = ? AND company_id = ?',
-        [employeeId, companyId]
+// Validate employee's GPS coordinates against ALL assigned active geofences
+const validateEmployeeLocation = async (employeeId, companyId, latitude, longitude) => {
+    // Check if company has any active geofences configured
+    const [companyGeofences] = await db.execute(
+        'SELECT COUNT(*) as count FROM geofences WHERE company_id = ? AND status = "Active"',
+        [companyId]
     );
 
-    if (employees.length === 0) return null;
-
-    if (!employees[0].assigned_branch) {
-         const [geofences] = await db.execute(
-            'SELECT * FROM geofences WHERE company_id = ? AND status = "Active" LIMIT 1',
-            [companyId]
-        );
-        return geofences.length > 0 ? geofences[0] : null;
+    // If company hasn't configured any geofences, skip geofence validation
+    if (companyGeofences[0].count === 0) {
+        return { valid: true };
     }
 
-    const assignedBranch = employees[0].assigned_branch;
-    const [geofences] = await db.execute(
-        'SELECT * FROM geofences WHERE company_id = ? AND name = ? AND status = "Active"',
-        [companyId, assignedBranch]
-    );
+    // Fetch all active assigned geofences for this employee
+    const [assignedLocations] = await db.execute(`
+        SELECT g.id, g.name, g.latitude, g.longitude, g.radius 
+        FROM geofences g
+        INNER JOIN employee_locations el ON el.location_id = g.id
+        WHERE el.employee_id = ? AND el.company_id = ? AND g.status = 'Active'
+    `, [employeeId, companyId]);
 
-    return geofences.length > 0 ? geofences[0] : null;
+    // Strict Rule 1: If employee has no assigned active locations -> BLOCK attendance!
+    if (assignedLocations.length === 0) {
+        return { 
+            valid: false, 
+            message: 'You have no assigned work locations. Please contact your administrator.' 
+        };
+    }
+
+    if (!latitude || !longitude) {
+        return { valid: false, message: 'GPS coordinates are required to verify your location.' };
+    }
+
+    // Strict Rule 2: Check if employee is within radius of ANY assigned location
+    let isInside = false;
+    for (const loc of assignedLocations) {
+        const dist = calculateDistance(latitude, longitude, parseFloat(loc.latitude), parseFloat(loc.longitude));
+        if (dist <= loc.radius) {
+            isInside = true;
+            break;
+        }
+    }
+
+    if (!isInside) {
+        return { 
+            valid: false, 
+            message: 'You are outside your assigned work locations.' 
+        };
+    }
+
+    return { valid: true };
 };
 
 const FACE_MATCH_THRESHOLD = 0.45; // Adjusted threshold for face-api.js (distance < 0.45 is a match)
@@ -200,15 +227,9 @@ exports.checkIn = async (req, res) => {
         // If face recognition is disabled or skipFace is requested when disabled
         if (!isEnabled || skipFace) {
             // --- GEOFENCE VALIDATION ---
-            const geofence = await getGeofenceForEmployee(employeeId, companyId);
-            if (geofence) {
-                if (!latitude || !longitude) {
-                    return res.status(403).json({ message: 'GPS coordinates are required to verify your location.' });
-                }
-                const distance = calculateDistance(latitude, longitude, geofence.latitude, geofence.longitude);
-                if (distance > geofence.radius) {
-                    return res.status(403).json({ message: `Location Verification Failed: You are outside the designated work area.` });
-                }
+            const locCheck = await validateEmployeeLocation(employeeId, companyId, latitude, longitude);
+            if (!locCheck.valid) {
+                return res.status(403).json({ message: locCheck.message });
             }
             // ---------------------------
 
@@ -238,15 +259,9 @@ exports.checkIn = async (req, res) => {
         }
 
         // --- GEOFENCE VALIDATION ---
-        const geofence = await getGeofenceForEmployee(employeeId, companyId);
-        if (geofence) {
-            if (!latitude || !longitude) {
-                return res.status(403).json({ message: 'GPS coordinates are required to verify your location.' });
-            }
-            const distance = calculateDistance(latitude, longitude, geofence.latitude, geofence.longitude);
-            if (distance > geofence.radius) {
-                return res.status(403).json({ message: `Location Verification Failed: You are outside the designated work area.` });
-            }
+        const locCheck = await validateEmployeeLocation(employeeId, companyId, latitude, longitude);
+        if (!locCheck.valid) {
+            return res.status(403).json({ message: locCheck.message });
         }
         // ---------------------------
 
@@ -311,15 +326,9 @@ exports.checkOut = async (req, res) => {
 
         if (!isEnabled || skipFace) {
             // --- GEOFENCE VALIDATION ---
-            const geofence = await getGeofenceForEmployee(employeeId, companyId);
-            if (geofence) {
-                if (!latitude || !longitude) {
-                    return res.status(403).json({ message: 'GPS coordinates are required to verify your location.' });
-                }
-                const distance = calculateDistance(latitude, longitude, geofence.latitude, geofence.longitude);
-                if (distance > geofence.radius) {
-                    return res.status(403).json({ message: `Location Verification Failed: You are outside the designated work area.` });
-                }
+            const locCheck = await validateEmployeeLocation(employeeId, companyId, latitude, longitude);
+            if (!locCheck.valid) {
+                return res.status(403).json({ message: locCheck.message });
             }
             // ---------------------------
 
@@ -356,15 +365,9 @@ exports.checkOut = async (req, res) => {
         }
 
         // --- GEOFENCE VALIDATION ---
-        const geofence = await getGeofenceForEmployee(employeeId, companyId);
-        if (geofence) {
-            if (!latitude || !longitude) {
-                return res.status(403).json({ message: 'GPS coordinates are required to verify your location.' });
-            }
-            const distance = calculateDistance(latitude, longitude, geofence.latitude, geofence.longitude);
-            if (distance > geofence.radius) {
-                return res.status(403).json({ message: `Location Verification Failed: You are outside the designated work area.` });
-            }
+        const locCheck = await validateEmployeeLocation(employeeId, companyId, latitude, longitude);
+        if (!locCheck.valid) {
+            return res.status(403).json({ message: locCheck.message });
         }
         // ---------------------------
 
