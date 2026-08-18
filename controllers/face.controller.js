@@ -57,10 +57,12 @@ const validateEmployeeLocation = async (employeeId, companyId, latitude, longitu
 
     // Strict Rule 2: Check if employee is within radius of ANY assigned location
     let isInside = false;
+    let matchedLocation = null;
     for (const loc of assignedLocations) {
         const dist = calculateDistance(latitude, longitude, parseFloat(loc.latitude), parseFloat(loc.longitude));
         if (dist <= loc.radius) {
             isInside = true;
+            matchedLocation = loc;
             break;
         }
     }
@@ -72,7 +74,7 @@ const validateEmployeeLocation = async (employeeId, companyId, latitude, longitu
         };
     }
 
-    return { valid: true };
+    return { valid: true, matchedLocation };
 };
 
 const FACE_MATCH_THRESHOLD = 0.45; // Adjusted threshold for face-api.js (distance < 0.45 is a match)
@@ -133,20 +135,14 @@ exports.registerFace = async (req, res) => {
 
         const descriptorJson = JSON.stringify(descriptor);
 
-        // --- NEW ANTI-DUPLICATE LOGIC ---
-        // Fetch all existing face embeddings to prevent cross-employee duplicates
-        const [embeddings] = await db.execute('SELECT employee_id, descriptor FROM face_embeddings');
-        let duplicateFound = false;
+        // --- PREVENT DUPLICATE FACES ---
+        const [allFaces] = await db.execute('SELECT employee_id, descriptor FROM face_embeddings WHERE employee_id != ?', [employee_id]);
         
-        for (const row of embeddings) {
-            // Ignore if the same employee is updating their own face
-            if (row.employee_id === employee_id) continue;
-            
-            const storedDescriptor = typeof row.descriptor === 'string' ? JSON.parse(row.descriptor) : row.descriptor;
-            const distance = euclideanDistance(descriptor, storedDescriptor);
-            
-            // Duplicate strict threshold: 0.45
-            if (distance <= 0.45) {
+        let duplicateFound = false;
+        for (let row of allFaces) {
+            const existingDesc = typeof row.descriptor === 'string' ? JSON.parse(row.descriptor) : row.descriptor;
+            const dist = euclideanDistance(descriptor, existingDesc);
+            if (dist <= 0.40) { // Strict uniqueness check
                 duplicateFound = true;
                 break;
             }
@@ -193,7 +189,7 @@ exports.getTodayStatus = async (req, res) => {
         const isEnabled = await isFaceRecognitionEnabledForCompany(companyId);
 
         const [existing] = await db.execute(
-            'SELECT in_time, out_time FROM attendance WHERE employee_id = ? AND date = ?',
+            'SELECT in_time, out_time, branch_name FROM attendance WHERE employee_id = ? AND date = ?',
             [employeeId, today]
         );
 
@@ -213,6 +209,7 @@ exports.getTodayStatus = async (req, res) => {
                 employeeId, 
                 customId: emp[0].custom_id || String(employeeId),
                 name: emp[0].name,
+                branchName: existing[0].branch_name,
                 isFaceRegistered,
                 isFaceDisabled: !isEnabled
             });
@@ -224,6 +221,7 @@ exports.getTodayStatus = async (req, res) => {
                 employeeId, 
                 customId: emp[0].custom_id || String(employeeId),
                 name: emp[0].name,
+                branchName: existing[0].branch_name,
                 isFaceRegistered,
                 isFaceDisabled: !isEnabled
             });
@@ -246,9 +244,17 @@ exports.checkIn = async (req, res) => {
 
         const { descriptor, livenessPassed, livenessScore, latitude, longitude, skipFace } = req.body;
 
-        const [emp] = await db.execute('SELECT id, company_id FROM employees WHERE email = (SELECT email FROM users WHERE id = ?)', [userId]);
+        let [emp] = await db.execute('SELECT id, custom_id, company_id FROM employees WHERE email = (SELECT email FROM users WHERE id = ?)', [userId]);
         if (emp.length === 0) return res.status(404).json({ message: 'Employee profile not found.' });
         
+        // If employeeId passed in body (e.g. PIN mode), allow lookup within same company
+        if (req.body.employeeId) {
+            const [pinEmp] = await db.execute('SELECT id, custom_id, company_id FROM employees WHERE (id = ? OR custom_id = ? OR machine_id = ?) AND company_id = ?', [req.body.employeeId, req.body.employeeId, req.body.employeeId, emp[0].company_id]);
+            if (pinEmp.length > 0) {
+                emp = pinEmp;
+            }
+        }
+
         const employeeId = emp[0].id;
         const companyId = emp[0].company_id;
 
@@ -261,6 +267,7 @@ exports.checkIn = async (req, res) => {
             if (!locCheck.valid) {
                 return res.status(403).json({ message: locCheck.message });
             }
+            const branchName = locCheck.matchedLocation?.name || null;
             // ---------------------------
 
             const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
@@ -272,11 +279,11 @@ exports.checkIn = async (req, res) => {
 
             if (existing.length === 0) {
                 await db.execute(
-                    'INSERT INTO attendance (employee_id, date, in_time, status, company_id) VALUES (?, ?, ?, ?, ?)',
-                    [employeeId, today, now, status, companyId]
+                    'INSERT INTO attendance (employee_id, date, in_time, status, company_id, branch_name) VALUES (?, ?, ?, ?, ?, ?)',
+                    [employeeId, today, now, status, companyId, branchName]
                 );
                 clearLockout(userId);
-                return res.status(200).json({ success: true, message: 'Check-in successful.' });
+                return res.status(200).json({ success: true, message: `Check-in successful at ${branchName || 'assigned location'}.` });
             } else {
                 return res.status(400).json({ success: false, message: 'Already checked in for today.' });
             }
@@ -293,6 +300,7 @@ exports.checkIn = async (req, res) => {
         if (!locCheck.valid) {
             return res.status(403).json({ message: locCheck.message });
         }
+        const branchName = locCheck.matchedLocation?.name || null;
         // ---------------------------
 
         // Fetch ONLY the logged-in employee's face descriptor
@@ -310,23 +318,25 @@ exports.checkIn = async (req, res) => {
             // Asia/Kolkata specific strings for MySQL
             const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
             const now = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+            const { determinePunchStatus } = require('../utils/attendanceHelper');
+            const status = await determinePunchStatus(companyId, now);
             
             // Validate: One check-in per day
             const [existing] = await db.execute('SELECT id FROM attendance WHERE employee_id = ? AND date = ?', [employeeId, today]);
 
             if (existing.length === 0) {
                 await db.execute(
-                    'INSERT INTO attendance (employee_id, date, in_time, status, company_id) VALUES (?, ?, ?, ?, ?)',
-                    [employeeId, today, now, 'present', companyId]
+                    'INSERT INTO attendance (employee_id, date, in_time, status, company_id, branch_name) VALUES (?, ?, ?, ?, ?, ?)',
+                    [employeeId, today, now, status, companyId, branchName]
                 );
                 clearLockout(userId);
-                return res.status(200).json({ success: true, message: 'Check-in successful.' });
+                return res.status(200).json({ success: true, message: `Check-in successful at ${branchName || 'assigned location'}.` });
             } else {
                 return res.status(400).json({ success: false, message: 'Already checked in for today.' });
             }
         } else {
             const attempts = recordFailure(userId);
-            await db.execute('INSERT INTO unknown_attempts (confidence) VALUES (?)', [distance]);
+            await db.execute('INSERT INTO unknown_attempts (confidence, created_at) VALUES (?, ?)', [distance, new Date()]);
             return res.status(400).json({ success: false, message: `Face match failed. Attempt ${attempts}/3.` });
         }
     } catch (error) {
@@ -346,8 +356,16 @@ exports.checkOut = async (req, res) => {
 
         const { descriptor, livenessPassed, livenessScore, latitude, longitude, skipFace } = req.body;
 
-        const [emp] = await db.execute('SELECT id, company_id FROM employees WHERE email = (SELECT email FROM users WHERE id = ?)', [userId]);
+        let [emp] = await db.execute('SELECT id, custom_id, company_id FROM employees WHERE email = (SELECT email FROM users WHERE id = ?)', [userId]);
         if (emp.length === 0) return res.status(404).json({ message: 'Employee profile not found.' });
+
+        if (req.body.employeeId) {
+            const [pinEmp] = await db.execute('SELECT id, custom_id, company_id FROM employees WHERE (id = ? OR custom_id = ? OR machine_id = ?) AND company_id = ?', [req.body.employeeId, req.body.employeeId, req.body.employeeId, emp[0].company_id]);
+            if (pinEmp.length > 0) {
+                emp = pinEmp;
+            }
+        }
+
         const empRec = emp[0];
         const employeeId = empRec.id;
         const companyId = empRec.company_id;
@@ -360,6 +378,7 @@ exports.checkOut = async (req, res) => {
             if (!locCheck.valid) {
                 return res.status(403).json({ message: locCheck.message });
             }
+            const branchName = locCheck.matchedLocation?.name || null;
             // ---------------------------
 
             const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
@@ -378,11 +397,11 @@ exports.checkOut = async (req, res) => {
                 const totalHours = (diffMs / (1000 * 60 * 60)).toFixed(2);
 
                 await db.execute(
-                    'UPDATE attendance SET out_time = ?, total_hours = ? WHERE id = ?',
-                    [now, totalHours, existing[0].id]
+                    'UPDATE attendance SET out_time = ?, total_hours = ?, branch_name = COALESCE(branch_name, ?) WHERE id = ?',
+                    [now, totalHours, branchName, existing[0].id]
                 );
                 clearLockout(userId);
-                return res.status(200).json({ success: true, message: 'Check-out successful.' });
+                return res.status(200).json({ success: true, message: `Check-out successful at ${branchName || 'assigned location'}.` });
             } else {
                 return res.status(400).json({ success: false, message: 'Already checked out for today.' });
             }
@@ -399,6 +418,7 @@ exports.checkOut = async (req, res) => {
         if (!locCheck.valid) {
             return res.status(403).json({ message: locCheck.message });
         }
+        const branchName = locCheck.matchedLocation?.name || null;
         // ---------------------------
 
         // Fetch ONLY the logged-in employee's face descriptor
@@ -432,17 +452,17 @@ exports.checkOut = async (req, res) => {
                 const totalHours = (diffMs / (1000 * 60 * 60)).toFixed(2);
 
                 await db.execute(
-                    'UPDATE attendance SET out_time = ?, total_hours = ? WHERE id = ?',
-                    [now, totalHours, existing[0].id]
+                    'UPDATE attendance SET out_time = ?, total_hours = ?, branch_name = COALESCE(branch_name, ?) WHERE id = ?',
+                    [now, totalHours, branchName, existing[0].id]
                 );
                 clearLockout(userId);
-                return res.status(200).json({ success: true, message: 'Check-out successful.' });
+                return res.status(200).json({ success: true, message: `Check-out successful at ${branchName || 'assigned location'}.` });
             } else {
                 return res.status(400).json({ success: false, message: 'Already checked out for today.' });
             }
         } else {
             const attempts = recordFailure(userId);
-            await db.execute('INSERT INTO unknown_attempts (confidence) VALUES (?)', [distance]);
+            await db.execute('INSERT INTO unknown_attempts (confidence, created_at) VALUES (?, ?)', [distance, new Date()]);
             return res.status(400).json({ success: false, message: `Face match failed. Attempt ${attempts}/3.` });
         }
     } catch (error) {

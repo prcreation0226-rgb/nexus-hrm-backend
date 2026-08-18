@@ -272,9 +272,14 @@ const initDB = async () => {
                 out_time DATETIME,
                 total_hours DECIMAL(10,2) DEFAULT 0.00,
                 status ENUM('present','absent','late','half_day') DEFAULT 'present',
+                branch_name VARCHAR(150) DEFAULT NULL,
                 FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
             )
         `);
+
+        try {
+            await db.execute("ALTER TABLE attendance ADD COLUMN branch_name VARCHAR(150) DEFAULT NULL");
+        } catch (colErr) {}
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS payroll (
