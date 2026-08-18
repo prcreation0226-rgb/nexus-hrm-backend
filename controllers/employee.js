@@ -571,7 +571,20 @@ exports.downloadEmployeeTemplate = async (req, res) => {
 // Bulk Upload Employees (.xlsx, .xls, .csv)
 exports.bulkUploadEmployees = async (req, res) => {
     try {
-        if (!req.file || !req.file.buffer) {
+        let fileBuffer = null;
+        if (req.file) {
+            if (req.file.buffer) {
+                fileBuffer = req.file.buffer;
+            } else if (req.file.path) {
+                const fs = require('fs');
+                if (fs.existsSync(req.file.path)) {
+                    fileBuffer = fs.readFileSync(req.file.path);
+                    try { fs.unlinkSync(req.file.path); } catch (e) {}
+                }
+            }
+        }
+
+        if (!fileBuffer) {
             return res.status(400).json({ message: 'Please upload an Excel (.xlsx) or CSV (.csv) file.' });
         }
 
@@ -596,7 +609,7 @@ exports.bulkUploadEmployees = async (req, res) => {
         // Parse Spreadsheet Buffer
         let workbook;
         try {
-            workbook = xlsx.read(req.file.buffer, { type: 'buffer', cellDates: true });
+            workbook = xlsx.read(fileBuffer, { type: 'buffer', cellDates: true });
         } catch (e) {
             return res.status(400).json({ message: 'Invalid file format. Please upload a valid Excel or CSV file.' });
         }

@@ -29,6 +29,13 @@ const upload = multer({
     }
 });
 
+const memoryUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 25 * 1024 * 1024
+    }
+});
+
 // Auth
 router.post('/login', authController.login);
 router.post('/register', authController.register);
@@ -77,7 +84,7 @@ router.delete('/plan/:id', auth, settingsController.deletePlan);
 // Employees (Admin-only for mutations, auth+subscription for reads)
 router.get('/employees/next-ids', auth, subscriptionGuard, employeeController.getNextIds);
 router.get('/employees/template', auth, subscriptionGuard, adminOnly, employeeController.downloadEmployeeTemplate);
-router.post('/employees/bulk-upload', auth, subscriptionGuard, adminOnly, upload.single('file'), employeeController.bulkUploadEmployees);
+router.post('/employees/bulk-upload', auth, subscriptionGuard, adminOnly, memoryUpload.single('file'), employeeController.bulkUploadEmployees);
 router.get('/employees', auth, subscriptionGuard, employeeController.getAllEmployees);
 router.get('/employees/:id', auth, subscriptionGuard, employeeController.getEmployeeById);
 router.post('/employees', auth, subscriptionGuard, adminOnly, upload.single('profileImage'), employeeController.addEmployee);
