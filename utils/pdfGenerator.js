@@ -105,7 +105,7 @@ async function generatePayslipPDF(payroll, employee, companySettings) {
                         <div class="detail-row"><span class="label">Employee Name:</span> <span class="value">${employee.name}</span></div>
                         <div class="detail-row"><span class="label">Employee ID:</span> <span class="value">${employee.custom_id || employee.id}</span></div>
                         <div class="detail-row"><span class="label">Email:</span> <span class="value">${employee.email || 'N/A'}</span></div>
-                        <div class="detail-row"><span class="label">CPF Status:</span> <span class="value" style="font-weight: bold; color: ${employee.cpf_applicable === 0 || employee.cpf_applicable === '0' || employee.cpf_applicable === false ? '#64748b' : '#059669'};">${employee.cpf_applicable === 0 || employee.cpf_applicable === '0' || employee.cpf_applicable === false ? 'Exempt' : 'Applicable (Enrolled)'}</span></div>
+                        <div class="detail-row"><span class="label">CPF Status:</span> <span class="value" style="font-weight: bold; color: ${employee.cpf_applicable === 0 || employee.cpf_applicable === '0' || employee.cpf_applicable === false ? '#64748b' : '#059669'};">${employee.cpf_applicable === 0 || employee.cpf_applicable === '0' || employee.cpf_applicable === false ? 'Not Applicable' : 'Applicable'}</span></div>
                     </div>
                     <div class="emp-col">
                         <div class="detail-row"><span class="label">Pay Period:</span> <span class="value">${new Date(payroll.cycle_start).toLocaleDateString()} - ${new Date(payroll.cycle_end).toLocaleDateString()}</span></div>
@@ -147,7 +147,7 @@ async function generatePayslipPDF(payroll, employee, companySettings) {
                             </tr>` : (employee.cpf_applicable === 0 || employee.cpf_applicable === '0' || employee.cpf_applicable === false ? `
                             <tr>
                                 <td>CPF Contribution</td>
-                                <td class="amount" style="color: #64748b; font-style: italic;">Exempt (${currSymbol}0.00)</td>
+                                <td class="amount" style="color: #64748b; font-style: italic;">Not Applicable (${currSymbol}0.00)</td>
                             </tr>` : '')}
                             ${Number(payroll.cpf_employer || 0) > 0 ? `
                             <tr>
