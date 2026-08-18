@@ -180,11 +180,17 @@ exports.getTodayStatus = async (req, res) => {
         const userId = req.user.id;
         
         // Find employee id associated with this user
-        const [emp] = await db.execute('SELECT id FROM employees WHERE email = (SELECT email FROM users WHERE id = ?)', [userId]);
-        if (emp.length === 0) return res.json({ status: 'not_found' });
+        const [emp] = await db.execute('SELECT id, custom_id, machine_id, company_id, name FROM employees WHERE email = (SELECT email FROM users WHERE id = ?)', [userId]);
+        if (emp.length === 0) return res.json({ status: 'not_found', isFaceRegistered: false });
 
         const employeeId = emp[0].id;
+        const companyId = emp[0].company_id;
         const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+
+        // Check if face descriptor exists for this employee
+        const [faceRows] = await db.execute('SELECT updated_at FROM face_embeddings WHERE employee_id = ?', [employeeId]);
+        const isFaceRegistered = faceRows.length > 0;
+        const isEnabled = await isFaceRecognitionEnabledForCompany(companyId);
 
         const [existing] = await db.execute(
             'SELECT in_time, out_time FROM attendance WHERE employee_id = ? AND date = ?',
@@ -192,11 +198,35 @@ exports.getTodayStatus = async (req, res) => {
         );
 
         if (existing.length === 0) {
-            return res.json({ status: 'not_checked_in', employeeId });
+            return res.json({ 
+                status: 'not_checked_in', 
+                employeeId, 
+                customId: emp[0].custom_id || String(employeeId),
+                name: emp[0].name,
+                isFaceRegistered,
+                isFaceDisabled: !isEnabled
+            });
         } else if (!existing[0].out_time) {
-            return res.json({ status: 'checked_in', in_time: existing[0].in_time, employeeId });
+            return res.json({ 
+                status: 'checked_in', 
+                in_time: existing[0].in_time, 
+                employeeId, 
+                customId: emp[0].custom_id || String(employeeId),
+                name: emp[0].name,
+                isFaceRegistered,
+                isFaceDisabled: !isEnabled
+            });
         } else {
-            return res.json({ status: 'checked_out', in_time: existing[0].in_time, out_time: existing[0].out_time, employeeId });
+            return res.json({ 
+                status: 'checked_out', 
+                in_time: existing[0].in_time, 
+                out_time: existing[0].out_time, 
+                employeeId, 
+                customId: emp[0].custom_id || String(employeeId),
+                name: emp[0].name,
+                isFaceRegistered,
+                isFaceDisabled: !isEnabled
+            });
         }
     } catch (error) {
         console.error('Status check error:', error);
