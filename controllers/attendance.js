@@ -135,13 +135,15 @@ exports.processLogs = async (req, res) => {
 };
 
 exports.addManualAttendance = async (req, res) => {
-    const { employeeId, date, inTime, outTime, status } = req.body;
+    const { employeeId, date, inTime, outTime, status, branchName, branch_name } = req.body;
     try {
         // Safety: Verify admin owns this employee
         const [emp] = await db.execute('SELECT company_id FROM employees WHERE id = ?', [employeeId]);
         if (emp.length > 0 && req.user.role !== 'MasterAdmin' && emp[0].company_id !== req.user.company_id) {
             return res.status(403).json({ message: 'Cannot mark attendance for staff from another company' });
         }
+
+        const finalBranch = branchName || branch_name || null;
 
         let totalHours = 0;
         let fIn = inTime ? `${date} ${inTime}:00` : null;
@@ -156,21 +158,21 @@ exports.addManualAttendance = async (req, res) => {
             finalStatus = 'present';
         }
 
-        const [existing] = await db.execute('SELECT id FROM attendance WHERE employee_id = ? AND date = ?', [employeeId, date]);
+        const [existing] = await db.execute('SELECT id, branch_name FROM attendance WHERE employee_id = ? AND date = ?', [employeeId, date]);
 
         if (existing.length > 0) {
-            const sql = 'UPDATE attendance SET in_time = ?, out_time = ?, total_hours = ?, status = ? WHERE id = ?';
-            const values = [fIn, fOut, totalHours, finalStatus, existing[0].id];
+            const sql = 'UPDATE attendance SET in_time = ?, out_time = ?, total_hours = ?, status = ?, branch_name = COALESCE(?, branch_name) WHERE id = ?';
+            const values = [fIn, fOut, totalHours, finalStatus, finalBranch, existing[0].id];
             console.log('📝 Executing SQL (Update Manual Attendance):', sql, 'Params:', values);
             await db.execute(sql, values);
         } else {
-            const sql = 'INSERT INTO attendance (employee_id, date, in_time, out_time, total_hours, status, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)';
-            const values = [employeeId, date, fIn, fOut, totalHours, finalStatus, req.user.company_id];
+            const sql = 'INSERT INTO attendance (employee_id, date, in_time, out_time, total_hours, status, company_id, branch_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+            const values = [employeeId, date, fIn, fOut, totalHours, finalStatus, req.user.company_id, finalBranch];
             console.log('📝 Executing SQL (Add Manual Attendance):', sql, 'Params:', values);
             await db.execute(sql, values);
         }
 
-        await logAudit(req.user.id, 'ADD_MANUAL_ATTENDANCE', employeeId, { date, status });
+        await logAudit(req.user.id, 'ADD_MANUAL_ATTENDANCE', employeeId, { date, status, branch: finalBranch });
         res.json({ message: 'Added successfully' });
     } catch (err) {
         console.error('❌ SQL Error (addManualAttendance):', err);
@@ -180,13 +182,15 @@ exports.addManualAttendance = async (req, res) => {
 
 exports.updateAttendance = async (req, res) => {
     const { id } = req.params;
-    const { in_time, out_time, status } = req.body;
+    const { in_time, out_time, status, branch_name, branchName } = req.body;
     try {
         // Safety: Verify admin ownership
-        const [existing] = await db.execute('SELECT a.company_id FROM attendance a WHERE a.id = ?', [id]);
+        const [existing] = await db.execute('SELECT a.company_id, a.branch_name FROM attendance a WHERE a.id = ?', [id]);
         if (existing.length > 0 && req.user.role !== 'MasterAdmin' && existing[0].company_id !== req.user.company_id) {
             return res.status(403).json({ message: 'Cannot update record from another company' });
         }
+
+        const finalBranch = branch_name !== undefined ? branch_name : (branchName !== undefined ? branchName : existing[0]?.branch_name);
 
         const normalize = (dt) => {
             if (!dt) return null;
@@ -204,8 +208,8 @@ exports.updateAttendance = async (req, res) => {
         const finalStatus = status ? status.toLowerCase() : 'present';
         const finalDate = fIn ? fIn.split(' ')[0] : null;
 
-        const sql = 'UPDATE attendance SET in_time = ?, out_time = ?, status = ?, total_hours = ?, date = ? WHERE id = ?';
-        const values = [fIn, fOut, finalStatus, totalHours, finalDate, id];
+        const sql = 'UPDATE attendance SET in_time = ?, out_time = ?, status = ?, total_hours = ?, date = ?, branch_name = ? WHERE id = ?';
+        const values = [fIn, fOut, finalStatus, totalHours, finalDate, finalBranch, id];
 
         console.log('📝 Executing SQL (Update Attendance):', sql, 'Params:', values);
         await db.execute(sql, values);
@@ -217,8 +221,9 @@ exports.updateAttendance = async (req, res) => {
 };
 
 exports.bulkMarkAttendance = async (req, res) => {
-    const { employeeIds, date, status, inTime, outTime } = req.body;
+    const { employeeIds, date, status, inTime, outTime, branchName, branch_name } = req.body;
     try {
+        const finalBranch = branchName || branch_name || null;
         const finalIn = inTime || '08:00';
         const fIn = `${date} ${finalIn}:00`;
         const fOut = outTime ? `${date} ${outTime}:00` : null;
@@ -237,13 +242,13 @@ exports.bulkMarkAttendance = async (req, res) => {
             const [existing] = await db.execute('SELECT id FROM attendance WHERE employee_id = ? AND date = ?', [empId, date]);
             if (existing.length > 0) {
                 await db.execute(
-                    'UPDATE attendance SET status = ?, in_time = ?, out_time = ?, total_hours = ?, marked_by = ? WHERE id = ?',
-                    [status, fIn, fOut, totalHours, req.user.id, existing[0].id]
+                    'UPDATE attendance SET status = ?, in_time = ?, out_time = ?, total_hours = ?, marked_by = ?, branch_name = COALESCE(?, branch_name) WHERE id = ?',
+                    [status, fIn, fOut, totalHours, req.user.id, finalBranch, existing[0].id]
                 );
             } else {
                 await db.execute(
-                    'INSERT INTO attendance (employee_id, date, status, in_time, out_time, total_hours, marked_by, company_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                    [empId, date, status, fIn, fOut, totalHours, req.user.id, req.user.company_id]
+                    'INSERT INTO attendance (employee_id, date, status, in_time, out_time, total_hours, marked_by, company_id, branch_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [empId, date, status, fIn, fOut, totalHours, req.user.id, req.user.company_id, finalBranch]
                 );
             }
         }
