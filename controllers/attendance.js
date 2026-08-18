@@ -18,7 +18,10 @@ exports.getAttendance = async (req, res) => {
 
     let query = `
         SELECT a.*, e.name, e.role, e.photo, e.department, e.shift, e.salary_rate, e.salary_type, e.created_by,
-        (SELECT GROUP_CONCAT(DISTINCT g.name SEPARATOR ', ') FROM employee_locations el JOIN geofences g ON el.location_id = g.id WHERE el.employee_id = e.id AND g.status = 'Active') AS assigned_locations
+        COALESCE(
+            (SELECT GROUP_CONCAT(DISTINCT g.name SEPARATOR ', ') FROM employee_locations el JOIN geofences g ON el.location_id = g.id WHERE el.employee_id = e.id AND g.status = 'Active'),
+            e.assigned_branch
+        ) AS assigned_locations
         FROM attendance a 
         JOIN employees e ON a.employee_id = e.id
     `;
@@ -68,7 +71,7 @@ exports.getAttendance = async (req, res) => {
             else if (row.salary_type === 'monthly') earning = hours > 0 ? (rate / 30) : 0;
             else if (row.salary_type === 'daily') earning = hours > 0 ? rate : 0;
             const uif = earning * 0.01;
-            const branch = row.branch_name || row.assigned_locations || 'Main Branch';
+            const branch = row.branch_name || row.assigned_locations || null;
             return { ...row, branch_name: branch, earning: earning.toFixed(2), uif: uif.toFixed(2) };
         });
         res.json(enhancedRows);
