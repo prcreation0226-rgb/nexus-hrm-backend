@@ -110,7 +110,9 @@ exports.addEmployee = async (req, res) => {
         const dbShift = ['Morning Shift', 'Evening Shift', 'Night Shift'].includes(shift) ? shift : 'Morning Shift';
         const dbSalaryType = ['hourly', 'daily', 'monthly'].includes(salary_type) ? salary_type : 'hourly';
 
-        const empSql = 'INSERT INTO employees (machine_id, custom_id, name, role, department, shift, email, phone, salary_rate, salary_type, joined_date, date_of_birth, photo, uif_number, advance_balance, signature, created_by, is_uif_registered, company_id, assigned_branch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        const isCpfApplicable = (req.body.cpf_applicable === 'false' || req.body.cpf_applicable === false || req.body.cpf_applicable === 0 || req.body.cpf_applicable === '0') ? 0 : 1;
+
+        const empSql = 'INSERT INTO employees (machine_id, custom_id, name, role, department, shift, email, phone, salary_rate, salary_type, joined_date, date_of_birth, photo, uif_number, advance_balance, signature, created_by, is_uif_registered, company_id, assigned_branch, cpf_applicable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
         const formattedDOB = date_of_birth ? date_of_birth.split('T')[0] : null;
         const empValues = [
             nextMachineId.toString(),
@@ -132,7 +134,8 @@ exports.addEmployee = async (req, res) => {
             creatorId,
             (is_uif_registered === 'true' || is_uif_registered === true || is_uif_registered === 1 || is_uif_registered === '1') ? 1 : 0,
             req.user.company_id,
-            req.body.assigned_branch || null
+            req.body.assigned_branch || null,
+            isCpfApplicable
         ];
 
         console.log('📝 Saving Signature to DB. Length:', signature ? signature.length : 'EMPTY');
@@ -267,6 +270,11 @@ exports.updateEmployee = async (req, res) => {
             const isUif = data.is_uif_registered === 'true' || data.is_uif_registered === true || data.is_uif_registered === 1 || data.is_uif_registered === '1';
             empUpdates.push('`is_uif_registered` = ?');
             empParams.push(isUif ? 1 : 0);
+        }
+        if (data.cpf_applicable !== undefined) {
+            const isCpf = !(data.cpf_applicable === 'false' || data.cpf_applicable === false || data.cpf_applicable === 0 || data.cpf_applicable === '0');
+            empUpdates.push('`cpf_applicable` = ?');
+            empParams.push(isCpf ? 1 : 0);
         }
         if (data.joined_date) { empUpdates.push('`joined_date` = ?'); empParams.push(data.joined_date.split('T')[0]); }
 

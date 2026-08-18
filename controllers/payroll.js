@@ -118,13 +118,16 @@ exports.generatePayroll = async (req, res) => {
 
             const grossEarnings = Math.max(0, baseEarnings);
             // CPF calculation (replaces flat 1% UIF)
-            const cpfRates = getCpfRates(employee.date_of_birth);
+            const isCpfApplicable = !(employee.cpf_applicable === 0 || employee.cpf_applicable === '0' || employee.cpf_applicable === false);
             let cpfEmployee = 0, cpfEmployer = 0, cpfTotal = 0;
-            if (cpfRates && grossEarnings > 750) {
-                const cpfBase = Math.min(grossEarnings, CPF_OW_CEILING);
-                cpfEmployee = Math.round(cpfBase * cpfRates.employee * 100) / 100;
-                cpfEmployer = Math.round(cpfBase * cpfRates.employer * 100) / 100;
-                cpfTotal = Math.round(cpfBase * cpfRates.total * 100) / 100;
+            if (isCpfApplicable) {
+                const cpfRates = getCpfRates(employee.date_of_birth);
+                if (cpfRates && grossEarnings > 750) {
+                    const cpfBase = Math.min(grossEarnings, CPF_OW_CEILING);
+                    cpfEmployee = Math.round(cpfBase * cpfRates.employee * 100) / 100;
+                    cpfEmployer = Math.round(cpfBase * cpfRates.employer * 100) / 100;
+                    cpfTotal = Math.round(cpfBase * cpfRates.total * 100) / 100;
+                }
             }
             const advance = parseFloat(employee.advance_balance || 0);
             const netSalary = Math.max(0, grossEarnings - cpfEmployee - advance - deductions);

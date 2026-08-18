@@ -246,6 +246,7 @@ const initDB = async () => {
                 salary_rate DECIMAL(10,2) DEFAULT 0.00,
                 salary_type ENUM('hourly','daily','monthly') DEFAULT 'hourly',
                 status ENUM('active','on_leave','terminated') DEFAULT 'active',
+                cpf_applicable TINYINT(1) DEFAULT 1,
                 joined_date DATE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -400,6 +401,9 @@ const initDB = async () => {
             // Employee Date of Birth (for CPF age-based calculation)
             { table: 'employees', column: 'date_of_birth', type: 'DATE DEFAULT NULL' },
 
+            // Employee CPF Applicable Control
+            { table: 'employees', column: 'cpf_applicable', type: 'TINYINT(1) DEFAULT 1' },
+
             // CPF Contribution columns on Payroll
             { table: 'payroll', column: 'cpf_employee', type: 'DECIMAL(10,2) DEFAULT 0.00' },
             { table: 'payroll', column: 'cpf_employer', type: 'DECIMAL(10,2) DEFAULT 0.00' },
@@ -430,6 +434,13 @@ const initDB = async () => {
             } catch (err) {
                 console.error(`⚠️ Failed for ${col.column} in ${col.table}:`, err.message);
             }
+        }
+
+        // Ensure all existing employees have cpf_applicable = 1 (default Yes)
+        try {
+            await db.execute('UPDATE employees SET cpf_applicable = 1 WHERE cpf_applicable IS NULL');
+        } catch (cpfErr) {
+            console.error('⚠️ Failed to update null cpf_applicable values:', cpfErr.message);
         }
 
         // 3. Seed Default Admin if no users exist

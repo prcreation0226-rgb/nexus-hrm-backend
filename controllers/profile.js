@@ -4,7 +4,13 @@ const bcrypt = require('bcryptjs');
 exports.getProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        const [users] = await db.execute('SELECT id, name, email, role, employee_id, photo FROM users WHERE id = ?', [userId]);
+        const [users] = await db.execute(`
+            SELECT u.id, u.name, u.email, u.role, u.employee_id, u.photo,
+                   e.cpf_applicable, e.custom_id, e.date_of_birth, e.department, e.salary_type
+            FROM users u
+            LEFT JOIN employees e ON u.employee_id = e.id
+            WHERE u.id = ?
+        `, [userId]);
         
         if (users.length === 0) {
             return res.status(404).json({ message: 'User not found' });

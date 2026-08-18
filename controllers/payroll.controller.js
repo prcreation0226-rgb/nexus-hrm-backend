@@ -151,14 +151,17 @@ exports.generatePayroll = async (req, res) => {
             }
 
             // CPF Calculation (replaces UIF 1%)
-            console.log(`Calculating for emp ${emp.id}: baseSalary=${baseSalary}`);
-            const cpfRates = getCpfRates(emp.date_of_birth);
+            console.log(`Calculating for emp ${emp.id}: baseSalary=${baseSalary}, cpf_applicable=${emp.cpf_applicable}`);
+            const isCpfApplicable = !(emp.cpf_applicable === 0 || emp.cpf_applicable === '0' || emp.cpf_applicable === false);
             let cpfEmployee = 0, cpfEmployer = 0, cpfTotal = 0;
-            if (cpfRates && baseSalary > 750) {
-                const cpfBase = Math.min(baseSalary, CPF_OW_CEILING);
-                cpfEmployee = Math.round(cpfBase * cpfRates.employee * 100) / 100;
-                cpfEmployer = Math.round(cpfBase * cpfRates.employer * 100) / 100;
-                cpfTotal = Math.round(cpfBase * cpfRates.total * 100) / 100;
+            if (isCpfApplicable) {
+                const cpfRates = getCpfRates(emp.date_of_birth);
+                if (cpfRates && baseSalary > 750) {
+                    const cpfBase = Math.min(baseSalary, CPF_OW_CEILING);
+                    cpfEmployee = Math.round(cpfBase * cpfRates.employee * 100) / 100;
+                    cpfEmployer = Math.round(cpfBase * cpfRates.employer * 100) / 100;
+                    cpfTotal = Math.round(cpfBase * cpfRates.total * 100) / 100;
+                }
             }
             // Employee CPF is a deduction from salary (like old UIF)
             deductions += cpfEmployee;
@@ -334,11 +337,12 @@ exports.getLiveAccrual = async (req, res) => {
         const startDate = `${year}-${month}-01`;
         const endDate = `${year}-${month}-${String(now.getDate()).padStart(2, '0')}`;
 
-        // Get Employee Details (include date_of_birth for CPF)
-        const [empRows] = await db.execute('SELECT salary_rate, salary_type, advance_balance, date_of_birth FROM employees WHERE id = ?', [employeeId]);
+        // Get Employee Details (include date_of_birth and cpf_applicable for CPF)
+        const [empRows] = await db.execute('SELECT salary_rate, salary_type, advance_balance, date_of_birth, cpf_applicable FROM employees WHERE id = ?', [employeeId]);
         if (empRows.length === 0) return res.json({ liveEarnings: 0, startDate, endDate, totalHours: 0 });
         const emp = empRows[0];
         const salaryRate = parseFloat(emp.salary_rate || 0);
+        const isCpfApplicable = !(emp.cpf_applicable === 0 || emp.cpf_applicable === '0' || emp.cpf_applicable === false);
 
         // Get Attendance Stats
         const [attRows] = await db.execute(`
@@ -361,13 +365,16 @@ exports.getLiveAccrual = async (req, res) => {
         }
 
         // CPF calculation (replaces flat UIF 1%)
-        const cpfRates = getCpfRates(emp.date_of_birth);
+        let cpfRates = null;
         let cpfEmployee = 0, cpfEmployer = 0, cpfTotal = 0;
-        if (cpfRates && liveEarnings > 750) {
-            const cpfBase = Math.min(liveEarnings, CPF_OW_CEILING);
-            cpfEmployee = Math.round(cpfBase * cpfRates.employee * 100) / 100;
-            cpfEmployer = Math.round(cpfBase * cpfRates.employer * 100) / 100;
-            cpfTotal = Math.round(cpfBase * cpfRates.total * 100) / 100;
+        if (isCpfApplicable) {
+            cpfRates = getCpfRates(emp.date_of_birth);
+            if (cpfRates && liveEarnings > 750) {
+                const cpfBase = Math.min(liveEarnings, CPF_OW_CEILING);
+                cpfEmployee = Math.round(cpfBase * cpfRates.employee * 100) / 100;
+                cpfEmployer = Math.round(cpfBase * cpfRates.employer * 100) / 100;
+                cpfTotal = Math.round(cpfBase * cpfRates.total * 100) / 100;
+            }
         }
         const advanceDeduction = parseFloat(emp.advance_balance || 0);
         const netSalary = Math.max(0, liveEarnings - cpfEmployee - advanceDeduction);
@@ -379,11 +386,12 @@ exports.getLiveAccrual = async (req, res) => {
             totalHours,
             salaryRate,
             salaryType: emp.salary_type,
+            cpfApplicable: isCpfApplicable,
             cpfEmployee,
             cpfEmployer,
             cpfTotal,
             cpfAge: cpfRates ? cpfRates.age : null,
-            cpfMissing: !cpfRates,
+            cpfMissing: isCpfApplicable ? !cpfRates : false,
             advanceDeduction,
             netSalary
         });
