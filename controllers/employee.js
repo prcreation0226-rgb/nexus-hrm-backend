@@ -404,6 +404,58 @@ exports.deleteEmployee = async (req, res) => {
     }
 };
 
+// Bulk delete employees
+exports.bulkDeleteEmployees = async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'No employee IDs provided for deletion.' });
+        }
+
+        const companyId = req.user.company_id;
+        const currentUserEmpId = req.user.employee_id;
+
+        // Filter out self
+        const targetIds = ids.filter(id => !currentUserEmpId || String(id) !== String(currentUserEmpId));
+        if (targetIds.length === 0) {
+            return res.status(400).json({ message: 'Cannot delete your own account.' });
+        }
+
+        const placeholders = targetIds.map(() => '?').join(',');
+
+        // Safety: ensure ownership for company admin
+        if (req.user.role !== 'MasterAdmin' && companyId) {
+            const [validRows] = await db.execute(
+                `SELECT id FROM employees WHERE id IN (${placeholders}) AND company_id = ?`,
+                [...targetIds, companyId]
+            );
+            if (validRows.length === 0) {
+                return res.status(404).json({ message: 'No matching employees found for your company.' });
+            }
+            const allowedIds = validRows.map(r => r.id);
+            const allowedPlaceholders = allowedIds.map(() => '?').join(',');
+
+            await db.execute(`DELETE FROM users WHERE employee_id IN (${allowedPlaceholders})`, allowedIds);
+            const [delResult] = await db.execute(`DELETE FROM employees WHERE id IN (${allowedPlaceholders}) AND company_id = ?`, [...allowedIds, companyId]);
+
+            return res.json({
+                message: `Successfully deleted ${delResult.affectedRows} employee(s).`,
+                deletedCount: delResult.affectedRows
+            });
+        } else {
+            await db.execute(`DELETE FROM users WHERE employee_id IN (${placeholders})`, targetIds);
+            const [delResult] = await db.execute(`DELETE FROM employees WHERE id IN (${placeholders})`, targetIds);
+            return res.json({
+                message: `Successfully deleted ${delResult.affectedRows} employee(s).`,
+                deletedCount: delResult.affectedRows
+            });
+        }
+    } catch (err) {
+        console.error('❌ SQL Error (bulkDeleteEmployees):', err);
+        return res.status(500).json({ message: 'Error deleting records', error: err.message });
+    }
+};
+
 exports.adminResetPassword = async (req, res) => {
     try {
         const employeeId = req.params.id;
@@ -456,69 +508,34 @@ exports.adminResetPassword = async (req, res) => {
 // --- BULK EMPLOYEE UPLOAD & TEMPLATE ---
 const xlsx = require('xlsx');
 
-// Helper: Parse any date format (YYYY-MM-DD, DD/MM/YYYY, Excel Date Object, Excel serial number)
+// Helper: Parse any date format (YYYY-MM-DD, DD/MM/YYYY, Excel serial)
 function parseExcelDate(val) {
-    if (val === null || val === undefined || val === '') return null;
-    
-    // 1. Date object (Excel date object)
-    if (val instanceof Date && !isNaN(val.getTime())) {
-        const y = val.getFullYear();
-        const m = String(val.getMonth() + 1).padStart(2, '0');
-        const d = String(val.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
+    if (!val) return null;
+    if (val instanceof Date && !isNaN(val)) {
+        return val.toISOString().split('T')[0];
     }
-
-    // 2. Excel numeric serial (e.g. 33769, 44197, '33769')
-    const strVal = String(val).trim();
-    const numVal = Number(strVal);
-    if (!isNaN(numVal) && typeof val !== 'boolean' && numVal > 1000 && numVal < 100000 && /^\d+(\.\d+)?$/.test(strVal)) {
-        try {
-            const parsedCode = xlsx.SSF.parse_date_code(numVal);
-            if (parsedCode && parsedCode.y && parsedCode.m && parsedCode.d) {
-                const y = String(parsedCode.y).padStart(4, '0');
-                const m = String(parsedCode.m).padStart(2, '0');
-                const d = String(parsedCode.d).padStart(2, '0');
-                return `${y}-${m}-${d}`;
-            }
-        } catch (e) {}
-    }
-
-    // 3. String Regex Checks
-    // YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
-    const ymd = strVal.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
-    if (ymd) {
-        const y = ymd[1];
-        const m = ymd[2].padStart(2, '0');
-        const d = ymd[3].padStart(2, '0');
-        return `${y}-${m}-${d}`;
-    }
-
-    // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-    const dmy = strVal.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-    if (dmy) {
-        let first = parseInt(dmy[1], 10);
-        let second = parseInt(dmy[2], 10);
-        let year = dmy[3];
-        
-        let day = first;
-        let month = second;
-        if (second > 12 && first <= 12) {
-            day = second;
-            month = first;
+    if (typeof val === 'number') {
+        const utc_days = Math.floor(val - 25569);
+        const date_info = new Date(utc_days * 86400 * 1000);
+        if (!isNaN(date_info.getTime())) {
+            return date_info.toISOString().split('T')[0];
         }
-
-        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
-
-    // 4. Fallback: JavaScript Date parser (e.g. "15-Jun-1992", "June 15, 1992")
-    const parsed = new Date(strVal);
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        return str;
+    }
+    const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (dmy) {
+        const day = dmy[1].padStart(2, '0');
+        const month = dmy[2].padStart(2, '0');
+        const year = dmy[3];
+        return `${year}-${month}-${day}`;
+    }
+    const parsed = new Date(str);
     if (!isNaN(parsed.getTime())) {
-        const y = parsed.getFullYear();
-        const m = String(parsed.getMonth() + 1).padStart(2, '0');
-        const d = String(parsed.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
+        return parsed.toISOString().split('T')[0];
     }
-
     return null;
 }
 
@@ -699,26 +716,21 @@ exports.bulkUploadEmployees = async (req, res) => {
             const rowNumber = i + 2; // Row 1 is header, data starts on Row 2
 
             // Normalize column headers
-            const getRaw = (...keys) => {
+            const getVal = (...keys) => {
                 for (const key of keys) {
                     const match = Object.keys(raw).find(k => k.trim().toLowerCase() === key.toLowerCase());
                     if (match && raw[match] !== undefined && raw[match] !== null) {
-                        return raw[match];
+                        return String(raw[match]).trim();
                     }
                 }
                 return '';
             };
 
-            const getVal = (...keys) => {
-                const val = getRaw(...keys);
-                return (val !== null && val !== undefined) ? String(val).trim() : '';
-            };
-
             const name = getVal('Full Name', 'Name', 'full_name', 'Employee Name', 'Employee');
             const email = getVal('Email', 'email', 'Email Address', 'Email ID');
             const phone = getVal('Phone', 'phone', 'Phone Number', 'Contact', 'Mobile');
-            const rawDob = getRaw('Date of Birth', 'DOB', 'Birth Date', 'date_of_birth', 'BirthDate');
-            const rawJoinedDate = getRaw('Joining Date', 'Join Date', 'joined_date', 'Date of Joining', 'JoiningDate');
+            const rawDob = getVal('Date of Birth', 'DOB', 'Birth Date', 'date_of_birth', 'BirthDate');
+            const rawJoinedDate = getVal('Joining Date', 'Join Date', 'joined_date', 'Date of Joining', 'JoiningDate');
             const department = getVal('Department', 'Dept', 'department') || 'General';
             const designation = getVal('Designation', 'Role', 'designation', 'role', 'Job Title') || 'Staff / Employee';
             const rawSalary = getVal('Salary', 'salary', 'Basic Salary', 'Salary Rate', 'rate', 'Monthly Salary');

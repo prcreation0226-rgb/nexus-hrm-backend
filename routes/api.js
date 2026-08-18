@@ -90,6 +90,7 @@ router.get('/employees/:id', auth, subscriptionGuard, employeeController.getEmpl
 router.post('/employees', auth, subscriptionGuard, adminOnly, upload.single('profileImage'), employeeController.addEmployee);
 router.put('/employees/:id', auth, subscriptionGuard, adminOnly, upload.single('profileImage'), employeeController.updateEmployee);
 router.delete('/employees/:id', auth, subscriptionGuard, adminOnly, employeeController.deleteEmployee);
+router.post('/employees/bulk-delete', auth, subscriptionGuard, adminOnly, employeeController.bulkDeleteEmployees);
 router.post('/employees/:id/reset-password', auth, subscriptionGuard, adminOnly, employeeController.adminResetPassword);
 
 
