@@ -105,23 +105,23 @@ exports.addEmployee = async (req, res) => {
         }
 
         // --- 1. Auto Generate Magic Numbers ---
-        let empSql = "SELECT custom_id FROM employees WHERE custom_id REGEXP '^[0-9]+$'";
-        let machineSql = "SELECT machine_id FROM employees WHERE machine_id REGEXP '^[0-9]+$'";
+        let nextEmpSql = "SELECT custom_id FROM employees WHERE custom_id REGEXP '^[0-9]+$'";
+        let nextMachineSql = "SELECT machine_id FROM employees WHERE machine_id REGEXP '^[0-9]+$'";
         let idParams = [];
 
         if (req.user && req.user.role !== 'MasterAdmin' && req.user.company_id) {
-            empSql += " AND company_id = ?";
-            machineSql += " AND company_id = ?";
+            nextEmpSql += " AND company_id = ?";
+            nextMachineSql += " AND company_id = ?";
             idParams.push(req.user.company_id);
         }
 
-        empSql += " ORDER BY CAST(custom_id AS UNSIGNED) DESC LIMIT 1";
-        machineSql += " ORDER BY CAST(machine_id AS UNSIGNED) DESC LIMIT 1";
+        nextEmpSql += " ORDER BY CAST(custom_id AS UNSIGNED) DESC LIMIT 1";
+        nextMachineSql += " ORDER BY CAST(machine_id AS UNSIGNED) DESC LIMIT 1";
 
-        const [[lastEmp]] = await db.execute(empSql, idParams);
+        const [[lastEmp]] = await db.execute(nextEmpSql, idParams);
         const nextCustomId = lastEmp && lastEmp.custom_id ? (parseInt(lastEmp.custom_id) + 1) : 1001;
 
-        const [[lastMachine]] = await db.execute(machineSql, idParams);
+        const [[lastMachine]] = await db.execute(nextMachineSql, idParams);
         const nextMachineId = lastMachine && lastMachine.machine_id ? (parseInt(lastMachine.machine_id) + 1) : 1001;
 
         const finalCustomId = (custom_id && String(custom_id).trim() !== '') ? String(custom_id).trim() : nextCustomId.toString();
