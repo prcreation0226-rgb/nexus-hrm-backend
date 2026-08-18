@@ -76,6 +76,8 @@ router.put('/plan/:id', auth, settingsController.updatePlan);
 router.delete('/plan/:id', auth, settingsController.deletePlan);
 // Employees (Admin-only for mutations, auth+subscription for reads)
 router.get('/employees/next-ids', auth, subscriptionGuard, employeeController.getNextIds);
+router.get('/employees/template', auth, subscriptionGuard, adminOnly, employeeController.downloadEmployeeTemplate);
+router.post('/employees/bulk-upload', auth, subscriptionGuard, adminOnly, upload.single('file'), employeeController.bulkUploadEmployees);
 router.get('/employees', auth, subscriptionGuard, employeeController.getAllEmployees);
 router.get('/employees/:id', auth, subscriptionGuard, employeeController.getEmployeeById);
 router.post('/employees', auth, subscriptionGuard, adminOnly, upload.single('profileImage'), employeeController.addEmployee);

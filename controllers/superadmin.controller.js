@@ -5,7 +5,7 @@ exports.getDashboardStats = async (req, res) => {
     try {
         const isMaster = req.user.role && req.user.role.toLowerCase().includes('master');
         const companyFilter = isMaster ? '' : `WHERE created_by = ${db.escape(req.user.id)}`;
-        
+
         const [companies] = await db.execute(`SELECT COUNT(*) as total FROM companies ${companyFilter}`);
         const [activeCompanies] = await db.execute(`SELECT COUNT(*) as active FROM companies WHERE status = "active" ${isMaster ? '' : `AND created_by = ${db.escape(req.user.id)}`}`);
         const [revenue] = await db.execute(`SELECT SUM(s.amount) as total FROM subscriptions s LEFT JOIN companies c ON s.company_id = c.id WHERE s.payment_status = "paid" ${isMaster ? '' : `AND c.created_by = ${db.escape(req.user.id)}`}`);
@@ -13,7 +13,7 @@ exports.getDashboardStats = async (req, res) => {
         const [employees] = await db.execute(`SELECT COUNT(*) as total FROM employees e LEFT JOIN companies c ON e.company_id = c.id WHERE e.status = "active" ${isMaster ? '' : `AND c.created_by = ${db.escape(req.user.id)}`}`);
         const [attendance] = await db.execute(`SELECT COUNT(*) as present FROM attendance a LEFT JOIN employees e ON a.employee_id = e.id LEFT JOIN companies c ON e.company_id = c.id WHERE a.date = CURDATE() AND a.status IN ("present", "late", "half_day") ${isMaster ? '' : `AND c.created_by = ${db.escape(req.user.id)}`}`);
         const [activePlans] = await db.execute(`SELECT COUNT(*) as active FROM subscriptions s LEFT JOIN companies c ON s.company_id = c.id WHERE s.payment_status = "paid" AND s.end_date >= CURDATE() ${isMaster ? '' : `AND c.created_by = ${db.escape(req.user.id)}`}`);
-        
+
         const filterCondition = isMaster ? `WHERE u.role IN ('superadmin', 'Master Admin', 'system') OR u.id IS NULL` : `WHERE c.created_by = ${db.escape(req.user.id)} AND u.role IN ('superadmin', 'Master Admin', 'system')`;
         const [recentActivity] = await db.execute(`SELECT a.* FROM audit_logs a LEFT JOIN users u ON a.admin_id = u.id LEFT JOIN companies c ON u.company_id = c.id ${filterCondition} ORDER BY a.created_at DESC LIMIT 5`);
 
@@ -23,7 +23,7 @@ exports.getDashboardStats = async (req, res) => {
             const d = new Date();
             d.setDate(d.getDate() - i);
             const dStr = d.toISOString().split('T')[0];
-            
+
             const [signupsResult] = await db.execute(`SELECT COUNT(*) as count FROM companies WHERE DATE(created_at) = ? ${isMaster ? '' : `AND created_by = ${db.escape(req.user.id)}`}`, [dStr]);
             const [revenueResult] = await db.execute(`SELECT SUM(s.amount) as total FROM subscriptions s LEFT JOIN companies c ON s.company_id = c.id WHERE DATE(s.created_at) = ? AND s.payment_status="paid" ${isMaster ? '' : `AND c.created_by = ${db.escape(req.user.id)}`}`, [dStr]);
 
@@ -74,7 +74,7 @@ exports.createCompany = async (req, res) => {
     try {
         await connection.beginTransaction();
         const { company_name, owner_name, email, phone, plan, employee_limit, status, password } = req.body;
-        
+
         if (!company_name || !email) {
             await connection.rollback();
             return res.status(400).json({ error: 'Company name and email are required.' });
@@ -136,7 +136,7 @@ exports.updateCompany = async (req, res) => {
         await connection.beginTransaction();
         const { id } = req.params;
         const { company_name, owner_name, email, phone, plan, employee_limit, status, password } = req.body;
-        
+
         // 1. Update Company
         await connection.execute(
             'UPDATE companies SET company_name=?, owner_name=?, email=?, phone=?, plan=?, employee_limit=?, status=? WHERE id=?',
@@ -222,7 +222,7 @@ exports.resetCompanyPassword = async (req, res) => {
     try {
         const { id } = req.params;
         const [existingAdmins] = await db.execute('SELECT * FROM users WHERE company_id = ? AND (role = "admin" OR role = "master admin") LIMIT 1', [id]);
-        
+
         if (existingAdmins.length === 0) {
             return res.status(404).json({ message: 'Admin not found for this company' });
         }
@@ -257,7 +257,7 @@ exports.acceptRequest = async (req, res) => {
     try {
         await connection.beginTransaction();
         const { id } = req.params;
-        
+
         const [requests] = await connection.execute('SELECT * FROM company_requests WHERE id=?', [id]);
         if (requests.length === 0) {
             await connection.rollback();
@@ -345,7 +345,7 @@ exports.getAnalytics = async (req, res) => {
     try {
         const isMaster = req.user.role && req.user.role.toLowerCase().includes('master');
         const companyFilter = isMaster ? '' : `WHERE created_by = ${db.escape(req.user.id)}`;
-        
+
         // 1. Overview Stats
         const [totalRev] = await db.execute(`SELECT SUM(s.amount) as total FROM subscriptions s LEFT JOIN companies c ON s.company_id = c.id WHERE s.payment_status = "paid" ${isMaster ? '' : `AND c.created_by = ${db.escape(req.user.id)}`}`);
         const [activeSubs] = await db.execute(`SELECT COUNT(*) as active FROM subscriptions s LEFT JOIN companies c ON s.company_id = c.id WHERE s.payment_status = "paid" AND s.end_date >= CURDATE() ${isMaster ? '' : `AND c.created_by = ${db.escape(req.user.id)}`}`);
@@ -358,7 +358,7 @@ exports.getAnalytics = async (req, res) => {
             d.setMonth(d.getMonth() - i);
             const monthStr = d.toLocaleString('default', { month: 'short' });
             const yearStr = d.getFullYear();
-            
+
             const [revResult] = await db.execute(`
                 SELECT SUM(s.amount) as total 
                 FROM subscriptions s 
@@ -367,7 +367,7 @@ exports.getAnalytics = async (req, res) => {
                 AND MONTH(s.created_at) = ? AND YEAR(s.created_at) = ?
                 ${isMaster ? '' : `AND c.created_by = ${db.escape(req.user.id)}`}
             `, [d.getMonth() + 1, yearStr]);
-            
+
             revenueTrend.push({
                 name: `${monthStr} ${yearStr}`,
                 revenue: revResult[0].total || 0
@@ -387,7 +387,7 @@ exports.getAnalytics = async (req, res) => {
         // If no plans, provide dummy for empty state
         const finalPlanDist = planDist.length > 0 ? planDist : [{ name: 'No Active Plans', value: 1 }];
 
-        res.json({ 
+        res.json({
             overview: {
                 totalRevenue: totalRev[0].total || 0,
                 activeSubscriptions: activeSubs[0].active || 0,
@@ -470,7 +470,7 @@ exports.handlePlanRequest = async (req, res) => {
                     newCreatedAt = new Date(newCreatedAt.getTime() + remainingDiff);
                 }
             }
-            
+
             const startStr = newCreatedAt.toISOString().slice(0, 10);
             const endStr = new Date(newCreatedAt.getTime() + daysToAdd * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
             const createdStr = newCreatedAt.toISOString().slice(0, 19).replace('T', ' ');
@@ -563,7 +563,7 @@ exports.recordPayment = async (req, res) => {
 
         const [planRows] = await connection.execute('SELECT duration FROM plans WHERE name = ?', [plan_name]);
         const planDuration = planRows.length > 0 ? planRows[0].duration : 'monthly';
-        
+
         let daysToAdd = 30;
         if (planDuration === 'quarterly') daysToAdd = 90;
         if (planDuration === 'half-yearly') daysToAdd = 180;

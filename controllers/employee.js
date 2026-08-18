@@ -452,3 +452,372 @@ exports.adminResetPassword = async (req, res) => {
         res.status(500).json({ message: 'Error resetting password', error: err.message });
     }
 };
+
+// --- BULK EMPLOYEE UPLOAD & TEMPLATE ---
+const xlsx = require('xlsx');
+
+// Helper: Parse any date format (YYYY-MM-DD, DD/MM/YYYY, Excel serial)
+function parseExcelDate(val) {
+    if (!val) return null;
+    if (val instanceof Date && !isNaN(val)) {
+        return val.toISOString().split('T')[0];
+    }
+    if (typeof val === 'number') {
+        const utc_days = Math.floor(val - 25569);
+        const date_info = new Date(utc_days * 86400 * 1000);
+        if (!isNaN(date_info.getTime())) {
+            return date_info.toISOString().split('T')[0];
+        }
+    }
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        return str;
+    }
+    const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (dmy) {
+        const day = dmy[1].padStart(2, '0');
+        const month = dmy[2].padStart(2, '0');
+        const year = dmy[3];
+        return `${year}-${month}-${day}`;
+    }
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+        return parsed.toISOString().split('T')[0];
+    }
+    return null;
+}
+
+// Download Sample Template (.xlsx)
+exports.downloadEmployeeTemplate = async (req, res) => {
+    try {
+        const wb = xlsx.utils.book_new();
+        const headers = [
+            'Full Name',
+            'Email',
+            'Phone',
+            'Date of Birth',
+            'Joining Date',
+            'Department',
+            'Designation',
+            'Salary',
+            'Salary Type',
+            'Address',
+            'Employee ID',
+            'CPF Applicable'
+        ];
+
+        const sampleRows = [
+            [
+                'John Doe',
+                'john.doe@company.com',
+                '+65 9123 4567',
+                '1992-06-15',
+                new Date().toISOString().split('T')[0],
+                'Operations',
+                'Staff / Employee',
+                '3200',
+                'monthly',
+                'Block 123 Orchard Road, #05-01',
+                '',
+                'Yes'
+            ],
+            [
+                'Jane Smith',
+                'jane.smith@company.com',
+                '+65 9876 5432',
+                '1995-11-20',
+                new Date().toISOString().split('T')[0],
+                'Sales',
+                'Staff / Employee',
+                '20',
+                'hourly',
+                'Block 456 Jurong West, #08-12',
+                '',
+                'No'
+            ]
+        ];
+
+        const ws = xlsx.utils.aoa_to_sheet([headers, ...sampleRows]);
+
+        // Auto-fit column widths
+        ws['!cols'] = [
+            { wch: 20 }, // Full Name
+            { wch: 28 }, // Email
+            { wch: 18 }, // Phone
+            { wch: 16 }, // Date of Birth
+            { wch: 16 }, // Joining Date
+            { wch: 16 }, // Department
+            { wch: 18 }, // Designation
+            { wch: 12 }, // Salary
+            { wch: 14 }, // Salary Type
+            { wch: 32 }, // Address
+            { wch: 15 }, // Employee ID
+            { wch: 16 }  // CPF Applicable
+        ];
+
+        xlsx.utils.book_append_sheet(wb, ws, 'Employees_Template');
+
+        const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        res.setHeader('Content-Disposition', 'attachment; filename="employee_bulk_upload_template.xlsx"');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.send(buffer);
+    } catch (err) {
+        console.error('Error generating template:', err);
+        res.status(500).json({ message: 'Error generating employee template', error: err.message });
+    }
+};
+
+// Bulk Upload Employees (.xlsx, .xls, .csv)
+exports.bulkUploadEmployees = async (req, res) => {
+    try {
+        if (!req.file || !req.file.buffer) {
+            return res.status(400).json({ message: 'Please upload an Excel (.xlsx) or CSV (.csv) file.' });
+        }
+
+        const companyId = req.user.company_id;
+        const creatorId = req.user.id;
+
+        // Check Plan limit
+        if (req.user.role !== 'MasterAdmin' && companyId) {
+            const [company] = await db.execute('SELECT plan, employee_limit FROM companies WHERE id = ?', [companyId]);
+            if (company.length > 0) {
+                const limit = company[0].employee_limit || (company[0].plan === 'starter' ? 10 : company[0].plan === 'medium' ? 50 : 200);
+                const [countRows] = await db.execute('SELECT COUNT(*) as count FROM employees WHERE company_id = ?', [companyId]);
+                const currentCount = countRows[0].count;
+                if (currentCount >= limit) {
+                    return res.status(403).json({ 
+                        message: `Plan limit reached. Your plan allows up to ${limit} employees (Current: ${currentCount}). Please upgrade your plan.` 
+                    });
+                }
+            }
+        }
+
+        // Parse Spreadsheet Buffer
+        let workbook;
+        try {
+            workbook = xlsx.read(req.file.buffer, { type: 'buffer', cellDates: true });
+        } catch (e) {
+            return res.status(400).json({ message: 'Invalid file format. Please upload a valid Excel or CSV file.' });
+        }
+
+        const firstSheetName = workbook.SheetNames[0];
+        if (!firstSheetName) {
+            return res.status(400).json({ message: 'The uploaded workbook does not contain any sheets.' });
+        }
+
+        const sheet = workbook.Sheets[firstSheetName];
+        const rawRows = xlsx.utils.sheet_to_json(sheet, { defval: '', raw: false });
+
+        if (!rawRows || rawRows.length === 0) {
+            return res.status(400).json({ message: 'No employee records found in the uploaded file.' });
+        }
+
+        // Fetch existing emails and custom_ids for duplicate checking
+        const [existingEmps] = await db.execute(
+            'SELECT email, custom_id FROM employees WHERE company_id = ?',
+            [companyId]
+        );
+        const existingEmails = new Set(existingEmps.map(e => (e.email || '').trim().toLowerCase()).filter(Boolean));
+        const existingCustomIds = new Set(existingEmps.map(e => String(e.custom_id || '').trim()).filter(Boolean));
+
+        // Also check global users email
+        const [existingUsers] = await db.execute('SELECT email FROM users');
+        existingUsers.forEach(u => {
+            if (u.email) existingEmails.add(u.email.trim().toLowerCase());
+        });
+
+        // Determine starting auto-increment IDs for this company
+        const [[lastEmp]] = await db.execute(
+            "SELECT custom_id FROM employees WHERE custom_id REGEXP '^[0-9]+$' AND company_id = ? ORDER BY CAST(custom_id AS UNSIGNED) DESC LIMIT 1",
+            [companyId]
+        );
+        let curCustomIdNum = lastEmp && lastEmp.custom_id ? (parseInt(lastEmp.custom_id) + 1) : 1001;
+
+        const [[lastMachine]] = await db.execute(
+            "SELECT machine_id FROM employees WHERE machine_id REGEXP '^[0-9]+$' AND company_id = ? ORDER BY CAST(machine_id AS UNSIGNED) DESC LIMIT 1",
+            [companyId]
+        );
+        let curMachineIdNum = lastMachine && lastMachine.machine_id ? (parseInt(lastMachine.machine_id) + 1) : 1001;
+
+        const defaultPasswordHash = await bcrypt.hash('123456', 10);
+        const errors = [];
+        const successList = [];
+        const batchEmails = new Set();
+        const batchCustomIds = new Set();
+
+        for (let i = 0; i < rawRows.length; i++) {
+            const raw = rawRows[i];
+            const rowNumber = i + 2; // Row 1 is header, data starts on Row 2
+
+            // Normalize column headers
+            const getVal = (...keys) => {
+                for (const key of keys) {
+                    const match = Object.keys(raw).find(k => k.trim().toLowerCase() === key.toLowerCase());
+                    if (match && raw[match] !== undefined && raw[match] !== null) {
+                        return String(raw[match]).trim();
+                    }
+                }
+                return '';
+            };
+
+            const name = getVal('Full Name', 'Name', 'full_name', 'Employee Name', 'Employee');
+            const email = getVal('Email', 'email', 'Email Address', 'Email ID');
+            const phone = getVal('Phone', 'phone', 'Phone Number', 'Contact', 'Mobile');
+            const rawDob = getVal('Date of Birth', 'DOB', 'Birth Date', 'date_of_birth', 'BirthDate');
+            const rawJoinedDate = getVal('Joining Date', 'Join Date', 'joined_date', 'Date of Joining', 'JoiningDate');
+            const department = getVal('Department', 'Dept', 'department') || 'General';
+            const designation = getVal('Designation', 'Role', 'designation', 'role', 'Job Title') || 'Staff / Employee';
+            const rawSalary = getVal('Salary', 'salary', 'Basic Salary', 'Salary Rate', 'rate', 'Monthly Salary');
+            const salaryType = getVal('Salary Type', 'salary_type', 'SalaryType', 'Payment Type') || 'hourly';
+            const address = getVal('Address', 'address', 'Residential Address');
+            const customIdInput = getVal('Employee ID', 'custom_id', 'Emp ID', 'ID', 'EmployeeID');
+            const rawCpf = getVal('CPF Applicable', 'CPF', 'cpf_applicable', 'CPF Eligibility', 'CPF Eligible');
+
+            // --- Validations ---
+            if (!name) {
+                errors.push({ row: rowNumber, name: name || '---', email: email || '---', reason: 'Missing required field: Full Name' });
+                continue;
+            }
+
+            if (!email) {
+                errors.push({ row: rowNumber, name, email: '---', reason: 'Missing required field: Email' });
+                continue;
+            }
+
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                errors.push({ row: rowNumber, name, email, reason: `Invalid email address format: "${email}"` });
+                continue;
+            }
+
+            const lowerEmail = email.toLowerCase();
+            if (existingEmails.has(lowerEmail)) {
+                errors.push({ row: rowNumber, name, email, reason: `Email "${email}" is already registered in the system` });
+                continue;
+            }
+
+            if (batchEmails.has(lowerEmail)) {
+                errors.push({ row: rowNumber, name, email, reason: `Duplicate email "${email}" found multiple times in uploaded file` });
+                continue;
+            }
+
+            // Date of Birth validation
+            const formattedDOB = parseExcelDate(rawDob);
+            if (!formattedDOB) {
+                errors.push({ row: rowNumber, name, email, reason: `Invalid or missing Date of Birth "${rawDob}". Format must be YYYY-MM-DD` });
+                continue;
+            }
+
+            // Joining Date
+            const formattedJoinedDate = parseExcelDate(rawJoinedDate) || new Date().toISOString().split('T')[0];
+
+            // Salary Rate
+            let salaryRate = 0;
+            if (rawSalary) {
+                const cleanedSalary = String(rawSalary).replace(/[^0-9.]/g, '');
+                salaryRate = parseFloat(cleanedSalary) || 0;
+            }
+
+            // Salary Type
+            let dbSalaryType = 'hourly';
+            const lowerSalType = salaryType.toLowerCase();
+            if (lowerSalType.includes('month')) dbSalaryType = 'monthly';
+            else if (lowerSalType.includes('day') || lowerSalType.includes('daily')) dbSalaryType = 'daily';
+
+            // Custom ID / Machine ID resolution
+            let finalCustomId = '';
+            let finalMachineId = '';
+
+            if (customIdInput) {
+                finalCustomId = customIdInput;
+                if (existingCustomIds.has(finalCustomId) || batchCustomIds.has(finalCustomId)) {
+                    errors.push({ row: rowNumber, name, email, reason: `Employee ID "${finalCustomId}" is already assigned` });
+                    continue;
+                }
+                finalMachineId = finalCustomId;
+            } else {
+                while (existingCustomIds.has(String(curCustomIdNum)) || batchCustomIds.has(String(curCustomIdNum))) {
+                    curCustomIdNum++;
+                }
+                finalCustomId = String(curCustomIdNum);
+                finalMachineId = String(curMachineIdNum);
+                curCustomIdNum++;
+                curMachineIdNum++;
+            }
+
+            // CPF Applicable (Defaults to 1, unless explicitly No / 0 / Exempt)
+            let isCpf = 1;
+            const lowerCpf = rawCpf.toLowerCase();
+            if (['no', '0', 'false', 'exempt', 'not applicable', 'n'].includes(lowerCpf)) {
+                isCpf = 0;
+            }
+
+            // --- Database Insertion ---
+            try {
+                const empSql = 'INSERT INTO employees (machine_id, custom_id, name, role, department, shift, email, phone, salary_rate, salary_type, joined_date, date_of_birth, uif_number, advance_balance, created_by, is_uif_registered, company_id, cpf_applicable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+                const empValues = [
+                    finalMachineId,
+                    finalCustomId,
+                    name,
+                    'employee',
+                    department,
+                    'Morning Shift',
+                    email,
+                    phone || '',
+                    salaryRate,
+                    dbSalaryType,
+                    formattedJoinedDate,
+                    formattedDOB,
+                    address || '', // Storing address in uif_number / notes field
+                    0,
+                    creatorId,
+                    1,
+                    companyId,
+                    isCpf
+                ];
+
+                const [empResult] = await db.execute(empSql, empValues);
+                const newEmpId = empResult.insertId;
+
+                // Create user login with must_change_password = 1 (Force change password on first login)
+                const userSql = 'INSERT INTO users (employee_id, email, password, role, name, created_by, company_id, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?, 1)';
+                await db.execute(userSql, [newEmpId, email, defaultPasswordHash, 'employee', name, creatorId, companyId]);
+
+                // Track sets for fast duplicate prevention in subsequent rows
+                batchEmails.add(lowerEmail);
+                existingEmails.add(lowerEmail);
+                batchCustomIds.add(finalCustomId);
+                existingCustomIds.add(finalCustomId);
+
+                successList.push({
+                    id: newEmpId,
+                    custom_id: finalCustomId,
+                    name: name,
+                    email: email
+                });
+            } catch (insertErr) {
+                console.error(`Row ${rowNumber} insert error:`, insertErr);
+                errors.push({ 
+                    row: rowNumber, 
+                    name, 
+                    email, 
+                    reason: insertErr.code === 'ER_DUP_ENTRY' ? 'Duplicate record in database' : insertErr.message 
+                });
+            }
+        }
+
+        res.status(200).json({
+            message: `Bulk upload finished. ${successList.length} employees imported successfully.`,
+            totalProcessed: rawRows.length,
+            successCount: successList.length,
+            failedCount: errors.length,
+            errors: errors,
+            imported: successList
+        });
+    } catch (err) {
+        console.error('❌ Error in bulkUploadEmployees:', err);
+        res.status(500).json({ message: 'Error processing bulk upload', error: err.message });
+    }
+};
+

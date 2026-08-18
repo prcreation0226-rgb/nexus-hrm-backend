@@ -407,7 +407,10 @@ const initDB = async () => {
             // CPF Contribution columns on Payroll
             { table: 'payroll', column: 'cpf_employee', type: 'DECIMAL(10,2) DEFAULT 0.00' },
             { table: 'payroll', column: 'cpf_employer', type: 'DECIMAL(10,2) DEFAULT 0.00' },
-            { table: 'payroll', column: 'cpf_total', type: 'DECIMAL(10,2) DEFAULT 0.00' }
+            { table: 'payroll', column: 'cpf_total', type: 'DECIMAL(10,2) DEFAULT 0.00' },
+
+            // Force Change Password on First Login
+            { table: 'users', column: 'must_change_password', type: 'TINYINT(1) DEFAULT 0' }
         ];
 
         for (const col of columns) {

@@ -178,6 +178,7 @@ exports.login = async (req, res) => {
                 photo: user.emp_photo || user.photo, // Use latest employee photo if available
                 employee_id: user.employee_id,
                 company_id: user.company_id,
+                must_change_password: user.must_change_password === 1 || user.must_change_password === true,
                 localization
             }
         });
