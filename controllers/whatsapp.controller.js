@@ -20,6 +20,7 @@ exports.getSettings = async (req, res) => {
                 phone_number_id: '',
                 access_token: '',
                 template_name: 'payslip_delivery',
+                default_country_code: '+91',
                 is_enabled: 1
             });
         }
@@ -27,6 +28,7 @@ exports.getSettings = async (req, res) => {
         const settings = rows[0];
         // Mask access token for security
         settings.access_token = settings.access_token ? '********' : '';
+        settings.default_country_code = settings.default_country_code || '+91';
         res.json(settings);
     } catch (err) {
         console.error('Error getting WhatsApp settings:', err);
@@ -45,6 +47,7 @@ exports.saveSettings = async (req, res) => {
             phone_number_id,
             access_token,
             template_name = 'payslip_delivery',
+            default_country_code = '+91',
             is_enabled = 1
         } = req.body;
 
@@ -70,20 +73,21 @@ exports.saveSettings = async (req, res) => {
         const finalTemplate = (template_name || 'payslip_delivery').trim();
         const finalWabaId = (whatsapp_business_account_id || '').trim();
         const finalPhoneId = phone_number_id.trim();
+        const finalCountryCode = (default_country_code || '+91').trim();
 
         if (existing.length > 0) {
             await db.execute(
                 `UPDATE company_whatsapp_settings 
-                 SET whatsapp_business_account_id = ?, phone_number_id = ?, access_token = ?, template_name = ?, is_enabled = ?, updated_at = NOW()
+                 SET whatsapp_business_account_id = ?, phone_number_id = ?, access_token = ?, template_name = ?, default_country_code = ?, is_enabled = ?, updated_at = NOW()
                  WHERE company_id = ?`,
-                [finalWabaId, finalPhoneId, encryptedToken, finalTemplate, finalEnabled, companyId]
+                [finalWabaId, finalPhoneId, encryptedToken, finalTemplate, finalCountryCode, finalEnabled, companyId]
             );
         } else {
             await db.execute(
                 `INSERT INTO company_whatsapp_settings 
-                 (company_id, whatsapp_business_account_id, phone_number_id, access_token, template_name, is_enabled)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-                [companyId, finalWabaId, finalPhoneId, encryptedToken, finalTemplate, finalEnabled]
+                 (company_id, whatsapp_business_account_id, phone_number_id, access_token, template_name, default_country_code, is_enabled)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [companyId, finalWabaId, finalPhoneId, encryptedToken, finalTemplate, finalCountryCode, finalEnabled]
             );
         }
 

@@ -15,15 +15,22 @@ function formatPhoneNumber(phone, defaultCountryCode = '91') {
     if (cleaned.startsWith('0') && cleaned.length === 11) {
         cleaned = cleaned.substring(1);
     }
-    // If it's a standard 10-digit mobile number, automatically prepend country code
+
+    const code = String(defaultCountryCode || '91').replace(/[^\d]/g, '') || '91';
+
+    // If it already has country code (11 to 15 digits), keep it
+    if (cleaned.length >= 11 && !cleaned.startsWith('0')) {
+        return cleaned;
+    }
+    // If it's a standard 10-digit number without country code
     if (cleaned.length === 10) {
-        return `${defaultCountryCode}${cleaned}`;
+        return `${code}${cleaned}`;
     }
-    // If it's an 8-digit Singapore mobile number (starts with 8 or 9)
+    // If it's an 8-digit Singapore number (starts with 8 or 9)
     if (cleaned.length === 8 && (cleaned.startsWith('8') || cleaned.startsWith('9'))) {
-        return `65${cleaned}`;
+        return code === '65' ? `65${cleaned}` : `${code}${cleaned}`;
     }
-    return cleaned.length >= 7 ? cleaned : null;
+    return cleaned.length >= 7 ? `${code}${cleaned}` : null;
 }
 
 /**
@@ -33,13 +40,14 @@ async function sendWhatsAppDocument({
     phoneNumberId,
     accessToken,
     toPhone,
+    defaultCountryCode = '91',
     documentUrl,
     fileName,
     caption,
     templateName = 'payslip_delivery',
     templateParams = {}
 }) {
-    const formattedPhone = formatPhoneNumber(toPhone);
+    const formattedPhone = formatPhoneNumber(toPhone, defaultCountryCode);
     if (!formattedPhone) {
         throw new Error('Employee WhatsApp number is not available or invalid.');
     }
