@@ -1,5 +1,9 @@
 const db = require('../config/db');
 const { generatePayslipPDF } = require('../utils/pdfGenerator');
+const fs = require('fs');
+const path = require('path');
+const { decrypt } = require('../utils/cryptoUtils');
+const whatsappService = require('../services/whatsapp.service');
 
 // --- CPF Rate Helper ---
 // Ordinary Wage Ceiling: S$8,000/month
@@ -397,6 +401,198 @@ exports.getLiveAccrual = async (req, res) => {
         });
     } catch (err) {
         console.error('Error fetching live accrual:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.sendWhatsAppPayslip = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const companyId = req.user.company_id;
+
+        // Fetch payroll record
+        const [payrollRows] = await db.execute('SELECT * FROM payroll WHERE id = ?', [id]);
+        if (payrollRows.length === 0) return res.status(404).json({ error: 'Payroll record not found' });
+        const payroll = payrollRows[0];
+
+        if (req.user.role !== 'MasterAdmin' && payroll.company_id !== companyId) {
+            return res.status(403).json({ error: 'Unauthorized to access this record' });
+        }
+
+        // Fetch employee
+        const [empRows] = await db.execute('SELECT * FROM employees WHERE id = ?', [payroll.employee_id]);
+        if (empRows.length === 0) return res.status(404).json({ error: 'Employee not found' });
+        const employee = empRows[0];
+
+        if (!employee.phone || employee.phone.trim() === '') {
+            await db.execute(
+                'INSERT INTO whatsapp_logs (company_id, payroll_id, employee_id, employee_name, phone, pdf_path, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [payroll.company_id, payroll.id, employee.id, employee.name, null, payroll.pdf_path, 'failed', 'Employee WhatsApp number is not available.']
+            );
+            return res.status(400).json({ error: 'Employee WhatsApp number is not available.' });
+        }
+
+        // Fetch company WhatsApp settings
+        const [settingsRows] = await db.execute('SELECT * FROM company_whatsapp_settings WHERE company_id = ?', [payroll.company_id]);
+        if (settingsRows.length === 0 || !settingsRows[0].is_enabled) {
+            return res.status(400).json({ error: 'WhatsApp integration is not configured or disabled.' });
+        }
+        const waSettings = settingsRows[0];
+        const plainToken = decrypt(waSettings.access_token);
+
+        // Fetch company settings for PDF generation
+        let [compSettingsRows] = await db.execute('SELECT * FROM settings WHERE company_id = ?', [payroll.company_id]);
+        let compSettings = compSettingsRows[0] || {};
+
+        // Generate PDF if not exists
+        let pdfPath = payroll.pdf_path;
+        if (!pdfPath || !fs.existsSync(path.join(__dirname, '..', pdfPath))) {
+            pdfPath = await generatePayslipPDF(payroll, employee, compSettings);
+            await db.execute('UPDATE payroll SET pdf_path = ? WHERE id = ?', [pdfPath, id]);
+        }
+
+        const monthNames = ["January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"];
+        const payrollDate = new Date(payroll.cycle_start);
+        const monthYear = `${monthNames[payrollDate.getMonth()]} ${payrollDate.getFullYear()}`;
+
+        const serverBase = `${req.protocol}://${req.get('host')}`;
+        const fullPdfUrl = `${serverBase}${pdfPath.startsWith('/') ? '' : '/'}${pdfPath}`;
+
+        const sendRes = await whatsappService.sendWhatsAppDocument({
+            phoneNumberId: waSettings.phone_number_id,
+            accessToken: plainToken,
+            toPhone: employee.phone,
+            documentUrl: fullPdfUrl,
+            fileName: `Payslip_${employee.name.replace(/\s+/g, '_')}_${monthYear.replace(/\s+/g, '_')}.pdf`,
+            templateName: waSettings.template_name,
+            templateParams: {
+                employeeName: employee.name,
+                monthYear: monthYear
+            }
+        });
+
+        // Log success
+        await db.execute(
+            'INSERT INTO whatsapp_logs (company_id, payroll_id, employee_id, employee_name, phone, pdf_path, message_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [payroll.company_id, payroll.id, employee.id, employee.name, employee.phone, pdfPath, sendRes.messageId, 'sent']
+        );
+
+        res.json({ success: true, message: `Payslip sent via WhatsApp to ${employee.name} (${employee.phone})` });
+    } catch (err) {
+        console.error('Error sending WhatsApp payslip:', err);
+        // Log failure
+        try {
+            if (req.params.id) {
+                const [p] = await db.execute('SELECT p.*, e.name, e.phone FROM payroll p JOIN employees e ON p.employee_id = e.id WHERE p.id = ?', [req.params.id]);
+                if (p.length > 0) {
+                    await db.execute(
+                        'INSERT INTO whatsapp_logs (company_id, payroll_id, employee_id, employee_name, phone, pdf_path, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                        [p[0].company_id, p[0].id, p[0].employee_id, p[0].name, p[0].phone, p[0].pdf_path, 'failed', err.message]
+                    );
+                }
+            }
+        } catch (logErr) {}
+
+        res.status(500).json({ error: err.message || 'Unable to send WhatsApp payslip. Please try again.' });
+    }
+};
+
+exports.sendBulkWhatsApp = async (req, res) => {
+    try {
+        const { payrollIds } = req.body;
+        const companyId = req.user.company_id;
+
+        if (!Array.isArray(payrollIds) || payrollIds.length === 0) {
+            return res.status(400).json({ error: 'No payroll records provided.' });
+        }
+
+        // Fetch company WhatsApp settings
+        const [settingsRows] = await db.execute('SELECT * FROM company_whatsapp_settings WHERE company_id = ?', [companyId]);
+        if (settingsRows.length === 0 || !settingsRows[0].is_enabled) {
+            return res.status(400).json({ error: 'WhatsApp integration is not configured or disabled.' });
+        }
+        const waSettings = settingsRows[0];
+        const plainToken = decrypt(waSettings.access_token);
+
+        let [compSettingsRows] = await db.execute('SELECT * FROM settings WHERE company_id = ?', [companyId]);
+        let compSettings = compSettingsRows[0] || {};
+
+        const monthNames = ["January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"];
+
+        const serverBase = `${req.protocol}://${req.get('host')}`;
+
+        // Fetch all target payrolls with employees
+        const placeholders = payrollIds.map(() => '?').join(',');
+        const [payrolls] = await db.execute(`
+            SELECT p.*, e.name as employee_name, e.phone as employee_phone, e.email as employee_email
+            FROM payroll p
+            JOIN employees e ON p.employee_id = e.id
+            WHERE p.id IN (${placeholders}) ${req.user.role !== 'MasterAdmin' ? 'AND p.company_id = ?' : ''}
+        `, req.user.role !== 'MasterAdmin' ? [...payrollIds, companyId] : payrollIds);
+
+        let sent = 0;
+        let failed = 0;
+        const errors = [];
+
+        // Safe batch sending with rate-limit protection (chunks of 5, 300ms delay)
+        await whatsappService.sendBatchWithRateLimit(payrolls, async (item) => {
+            try {
+                if (!item.employee_phone || item.employee_phone.trim() === '') {
+                    throw new Error('Employee WhatsApp number is not available.');
+                }
+
+                // Generate PDF if needed
+                let pdfPath = item.pdf_path;
+                if (!pdfPath || !fs.existsSync(path.join(__dirname, '..', pdfPath))) {
+                    const [empFull] = await db.execute('SELECT * FROM employees WHERE id = ?', [item.employee_id]);
+                    pdfPath = await generatePayslipPDF(item, empFull[0], compSettings);
+                    await db.execute('UPDATE payroll SET pdf_path = ? WHERE id = ?', [pdfPath, item.id]);
+                }
+
+                const payrollDate = new Date(item.cycle_start);
+                const monthYear = `${monthNames[payrollDate.getMonth()]} ${payrollDate.getFullYear()}`;
+                const fullPdfUrl = `${serverBase}${pdfPath.startsWith('/') ? '' : '/'}${pdfPath}`;
+
+                const sendRes = await whatsappService.sendWhatsAppDocument({
+                    phoneNumberId: waSettings.phone_number_id,
+                    accessToken: plainToken,
+                    toPhone: item.employee_phone,
+                    documentUrl: fullPdfUrl,
+                    fileName: `Payslip_${item.employee_name.replace(/\s+/g, '_')}_${monthYear.replace(/\s+/g, '_')}.pdf`,
+                    templateName: waSettings.template_name,
+                    templateParams: {
+                        employeeName: item.employee_name,
+                        monthYear: monthYear
+                    }
+                });
+
+                await db.execute(
+                    'INSERT INTO whatsapp_logs (company_id, payroll_id, employee_id, employee_name, phone, pdf_path, message_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [item.company_id, item.id, item.employee_id, item.employee_name, item.employee_phone, pdfPath, sendRes.messageId, 'sent']
+                );
+                sent++;
+            } catch (err) {
+                failed++;
+                errors.push({ employee: item.employee_name, reason: err.message });
+                await db.execute(
+                    'INSERT INTO whatsapp_logs (company_id, payroll_id, employee_id, employee_name, phone, pdf_path, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [item.company_id, item.id, item.employee_id, item.employee_name, item.employee_phone || null, item.pdf_path || null, 'failed', err.message]
+                );
+            }
+        }, { concurrency: 5, delayMs: 300 });
+
+        res.json({
+            success: true,
+            sent,
+            failed,
+            total: payrolls.length,
+            errors,
+            message: `Processed ${payrolls.length} payslips: ${sent} sent successfully, ${failed} failed.`
+        });
+    } catch (err) {
+        console.error('Error in bulk WhatsApp sending:', err);
         res.status(500).json({ error: err.message });
     }
 };

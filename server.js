@@ -629,6 +629,39 @@ const initDB = async () => {
             )
         `);
 
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS company_whatsapp_settings (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_id BIGINT NOT NULL UNIQUE,
+                whatsapp_business_account_id VARCHAR(100) DEFAULT NULL,
+                phone_number_id VARCHAR(100) NOT NULL,
+                access_token TEXT NOT NULL,
+                template_name VARCHAR(100) DEFAULT 'payslip_delivery',
+                is_enabled TINYINT(1) DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+            )
+        `);
+
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS whatsapp_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_id BIGINT NOT NULL,
+                payroll_id INT,
+                employee_id INT NOT NULL,
+                employee_name VARCHAR(100),
+                phone VARCHAR(30),
+                pdf_path TEXT,
+                message_id VARCHAR(100) DEFAULT NULL,
+                status ENUM('sent', 'failed') DEFAULT 'sent',
+                error_message TEXT DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+                FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+            )
+        `);
+
         console.log('✅ New module tables checked/created');
 
 

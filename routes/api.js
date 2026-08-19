@@ -165,6 +165,18 @@ router.post('/payroll/:id/generate-pdf', auth, subscriptionGuard, payrollControl
 router.patch('/payroll/:id', auth, subscriptionGuard, adminOnly, payrollController.updateStatus);
 router.delete('/payroll/:id', auth, subscriptionGuard, adminOnly, payrollController.deletePayroll);
 
+// WhatsApp Integration Settings & Logs
+const whatsappController = require('../controllers/whatsapp.controller');
+router.get('/settings/whatsapp', auth, adminOnly, whatsappController.getSettings);
+router.post('/settings/whatsapp', auth, adminOnly, whatsappController.saveSettings);
+router.post('/settings/whatsapp/test', auth, adminOnly, whatsappController.testConnection);
+router.get('/whatsapp/logs', auth, adminOnly, whatsappController.getLogs);
+router.post('/whatsapp/retry-logs', auth, adminOnly, whatsappController.retryLogs);
+
+// WhatsApp Payslip Delivery
+router.post('/payroll/send-whatsapp-bulk', auth, subscriptionGuard, adminOnly, payrollController.sendBulkWhatsApp);
+router.post('/payroll/:id/send-whatsapp', auth, subscriptionGuard, adminOnly, payrollController.sendWhatsAppPayslip);
+
 // Email Settings
 router.get('/settings/email', auth, adminOnly, emailSettingsController.getEmailSettings);
 router.post('/settings/email', auth, adminOnly, emailSettingsController.saveEmailSettings);
