@@ -2,13 +2,26 @@ const axios = require('axios');
 
 /**
  * Format phone number to WhatsApp E.164 international format without + or spaces
- * e.g. "+65 9123 4567" -> "6591234567", "+91 98765 43210" -> "919876543210"
+ * Automatically handles 10-digit local numbers by adding default country code
+ * e.g. "9876543210" -> "919876543210", "+65 9123 4567" -> "6591234567"
  */
-function formatPhoneNumber(phone) {
+function formatPhoneNumber(phone, defaultCountryCode = '91') {
     if (!phone) return null;
     let cleaned = String(phone).replace(/[^\d+]/g, '');
     if (cleaned.startsWith('+')) {
         cleaned = cleaned.substring(1);
+    }
+    // Remove leading 0 if someone entered e.g. 09876543210
+    if (cleaned.startsWith('0') && cleaned.length === 11) {
+        cleaned = cleaned.substring(1);
+    }
+    // If it's a standard 10-digit mobile number, automatically prepend country code
+    if (cleaned.length === 10) {
+        return `${defaultCountryCode}${cleaned}`;
+    }
+    // If it's an 8-digit Singapore mobile number (starts with 8 or 9)
+    if (cleaned.length === 8 && (cleaned.startsWith('8') || cleaned.startsWith('9'))) {
+        return `65${cleaned}`;
     }
     return cleaned.length >= 7 ? cleaned : null;
 }
