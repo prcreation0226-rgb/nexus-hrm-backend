@@ -20,7 +20,7 @@ exports.getSettings = async (req, res) => {
                 phone_number_id: '',
                 access_token: '',
                 template_name: 'payslip_delivery',
-                default_country_code: '+91',
+                default_country_code: '+65',
                 is_enabled: 1
             });
         }
@@ -28,7 +28,7 @@ exports.getSettings = async (req, res) => {
         const settings = rows[0];
         // Mask access token for security
         settings.access_token = settings.access_token ? '********' : '';
-        settings.default_country_code = settings.default_country_code || '+91';
+        settings.default_country_code = settings.default_country_code || '+65';
         res.json(settings);
     } catch (err) {
         console.error('Error getting WhatsApp settings:', err);
@@ -47,7 +47,7 @@ exports.saveSettings = async (req, res) => {
             phone_number_id,
             access_token,
             template_name = 'payslip_delivery',
-            default_country_code = '+91',
+            default_country_code = '+65',
             is_enabled = 1
         } = req.body;
 
@@ -73,7 +73,7 @@ exports.saveSettings = async (req, res) => {
         const finalTemplate = (template_name || 'payslip_delivery').trim();
         const finalWabaId = (whatsapp_business_account_id || '').trim();
         const finalPhoneId = phone_number_id.trim();
-        const finalCountryCode = (default_country_code || '+91').trim();
+        const finalCountryCode = (default_country_code || '+65').trim();
 
         if (existing.length > 0) {
             await db.execute(

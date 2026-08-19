@@ -5,7 +5,7 @@ const axios = require('axios');
  * Automatically handles 10-digit local numbers by adding default country code
  * e.g. "9876543210" -> "919876543210", "+65 9123 4567" -> "6591234567"
  */
-function formatPhoneNumber(phone, defaultCountryCode = '91') {
+function formatPhoneNumber(phone, defaultCountryCode = '65') {
     if (!phone) return null;
     let cleaned = String(phone).replace(/[^\d+]/g, '');
     if (cleaned.startsWith('+')) {
@@ -16,7 +16,7 @@ function formatPhoneNumber(phone, defaultCountryCode = '91') {
         cleaned = cleaned.substring(1);
     }
 
-    const code = String(defaultCountryCode || '91').replace(/[^\d]/g, '') || '91';
+    const code = String(defaultCountryCode || '65').replace(/[^\d]/g, '') || '65';
 
     // If it already has country code (11 to 15 digits), keep it
     if (cleaned.length >= 11 && !cleaned.startsWith('0')) {
