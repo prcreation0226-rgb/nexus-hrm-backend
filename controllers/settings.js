@@ -78,6 +78,18 @@ exports.getSettings = async (req, res) => {
                 settingsData.business_phone = compRows[0].phone || settingsData.business_phone;
             }
         }
+
+        // If timezone, date_format, or currency are missing, fallback to global_settings
+        if (!settingsData.timezone || !settingsData.date_format || !settingsData.currency) {
+            const [globalRows] = await db.execute('SELECT timezone, currency, date_format, language FROM global_settings LIMIT 1');
+            if (globalRows.length > 0) {
+                settingsData.timezone = settingsData.timezone || globalRows[0].timezone || 'Asia/Singapore';
+                settingsData.date_format = settingsData.date_format || globalRows[0].date_format || 'DD/MM/YYYY';
+                settingsData.currency = settingsData.currency || globalRows[0].currency || 'SGD';
+                settingsData.language = settingsData.language || globalRows[0].language || 'English';
+            }
+        }
+
         res.json(settingsData);
     } catch (err) {
         console.error('❌ SQL Error (getSettings):', err);

@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const moment = require('moment-timezone');
+const { getCompanyTimezone, determinePunchStatus } = require('../utils/attendanceHelper');
 // Calculate Euclidean distance between two descriptors
 const euclideanDistance = (desc1, desc2) => {
     if (desc1.length !== desc2.length) return Infinity;
@@ -270,9 +271,9 @@ exports.checkIn = async (req, res) => {
             const branchName = locCheck.matchedLocation?.name || null;
             // ---------------------------
 
-            const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
-            const now = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-            const { determinePunchStatus } = require('../utils/attendanceHelper');
+            const tz = await getCompanyTimezone(companyId);
+            const today = moment().tz(tz).format("YYYY-MM-DD");
+            const now = moment().tz(tz).format("YYYY-MM-DD HH:mm:ss");
             const status = await determinePunchStatus(companyId, now);
             
             const [existing] = await db.execute('SELECT id FROM attendance WHERE employee_id = ? AND date = ?', [employeeId, today]);
@@ -315,10 +316,9 @@ exports.checkIn = async (req, res) => {
         if (distance <= FACE_MATCH_THRESHOLD) {
             await db.execute('INSERT INTO face_logs (employee_id, status, confidence) VALUES (?, ?, ?)', [employeeId, 'success', distance]);
 
-            // Asia/Kolkata specific strings for MySQL
-            const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
-            const now = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-            const { determinePunchStatus } = require('../utils/attendanceHelper');
+            const tz = await getCompanyTimezone(companyId);
+            const today = moment().tz(tz).format("YYYY-MM-DD");
+            const now = moment().tz(tz).format("YYYY-MM-DD HH:mm:ss");
             const status = await determinePunchStatus(companyId, now);
             
             // Validate: One check-in per day
@@ -381,8 +381,9 @@ exports.checkOut = async (req, res) => {
             const branchName = locCheck.matchedLocation?.name || null;
             // ---------------------------
 
-            const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
-            const now = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+            const tz = await getCompanyTimezone(companyId);
+            const today = moment().tz(tz).format("YYYY-MM-DD");
+            const now = moment().tz(tz).format("YYYY-MM-DD HH:mm:ss");
             
             const [existing] = await db.execute('SELECT id, in_time, out_time FROM attendance WHERE employee_id = ? AND date = ?', [employeeId, today]);
 
@@ -390,8 +391,8 @@ exports.checkOut = async (req, res) => {
                 return res.status(400).json({ success: false, message: 'You have not checked in today.' });
             } else if (!existing[0].out_time) {
                 const inTimeStr = existing[0].in_time; 
-                const inTime = moment.tz(inTimeStr, "YYYY-MM-DD HH:mm:ss", "Asia/Kolkata");
-                const outTime = moment.tz(now, "YYYY-MM-DD HH:mm:ss", "Asia/Kolkata");
+                const inTime = moment.tz(inTimeStr, "YYYY-MM-DD HH:mm:ss", tz);
+                const outTime = moment.tz(now, "YYYY-MM-DD HH:mm:ss", tz);
                 
                 const diffMs = outTime.diff(inTime);
                 const totalHours = (diffMs / (1000 * 60 * 60)).toFixed(2);
@@ -433,8 +434,9 @@ exports.checkOut = async (req, res) => {
         if (distance <= FACE_MATCH_THRESHOLD) {
             await db.execute('INSERT INTO face_logs (employee_id, status, confidence) VALUES (?, ?, ?)', [employeeId, 'success', distance]);
 
-            const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
-            const now = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+            const tz = await getCompanyTimezone(companyId);
+            const today = moment().tz(tz).format("YYYY-MM-DD");
+            const now = moment().tz(tz).format("YYYY-MM-DD HH:mm:ss");
             
             // Validate: Must be checked in, and not yet checked out
             const [existing] = await db.execute('SELECT id, in_time, out_time FROM attendance WHERE employee_id = ? AND date = ?', [employeeId, today]);
@@ -445,8 +447,8 @@ exports.checkOut = async (req, res) => {
                 
                 // Safe Moment.js hour calculation
                 const inTimeStr = existing[0].in_time; 
-                const inTime = moment.tz(inTimeStr, "YYYY-MM-DD HH:mm:ss", "Asia/Kolkata");
-                const outTime = moment.tz(now, "YYYY-MM-DD HH:mm:ss", "Asia/Kolkata");
+                const inTime = moment.tz(inTimeStr, "YYYY-MM-DD HH:mm:ss", tz);
+                const outTime = moment.tz(now, "YYYY-MM-DD HH:mm:ss", tz);
                 
                 const diffMs = outTime.diff(inTime);
                 const totalHours = (diffMs / (1000 * 60 * 60)).toFixed(2);

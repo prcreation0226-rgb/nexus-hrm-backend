@@ -259,10 +259,12 @@ exports.bulkMarkAttendance = async (req, res) => {
 };
 
 const moment = require('moment-timezone');
+const { getCompanyTimezone } = require('../utils/attendanceHelper');
 
 exports.getDashboardStats = async (req, res) => {
     try {
-        const now = moment().tz("Asia/Kolkata");
+        const tz = await getCompanyTimezone(req.user.company_id);
+        const now = moment().tz(tz);
         const localToday = now.format("YYYY-MM-DD");
 
         const today = req.query.date || localToday;

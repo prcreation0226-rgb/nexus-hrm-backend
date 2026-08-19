@@ -1,6 +1,6 @@
 const db = require('../config/db');
 const moment = require('moment-timezone');
-const { determinePunchStatus } = require('../utils/attendanceHelper');
+const { getCompanyTimezone, determinePunchStatus } = require('../utils/attendanceHelper');
 
 const euclideanDistance = (desc1, desc2) => {
     if (desc1.length !== desc2.length) return Infinity;
@@ -208,10 +208,9 @@ exports.kioskFacePunch = async (req, res) => {
 
         if (minDistance <= FACE_MATCH_THRESHOLD && bestMatch) {
             const employeeId = bestMatch.employee_id;
-            const date = new Date().toISOString().split('T')[0];
-            const now = new Date();
-            const nowFormatted = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-            const todayFormatted = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+            const tz = await getCompanyTimezone(bestMatch.company_id);
+            const nowFormatted = moment().tz(tz).format("YYYY-MM-DD HH:mm:ss");
+            const todayFormatted = moment().tz(tz).format("YYYY-MM-DD");
 
             await db.execute('INSERT INTO face_logs (employee_id, status, confidence) VALUES (?, ?, ?)', [employeeId, 'success', minDistance]);
 
@@ -238,8 +237,8 @@ exports.kioskFacePunch = async (req, res) => {
                 action = 'Punch Out';
                 
                 const inTimeStr = attendance[0].in_time; 
-                const inTime = moment.tz(inTimeStr, "YYYY-MM-DD HH:mm:ss", "Asia/Kolkata");
-                const outTime = moment.tz(nowFormatted, "YYYY-MM-DD HH:mm:ss", "Asia/Kolkata");
+                const inTime = moment.tz(inTimeStr, "YYYY-MM-DD HH:mm:ss", tz);
+                const outTime = moment.tz(nowFormatted, "YYYY-MM-DD HH:mm:ss", tz);
                 
                 const diffMs = outTime.diff(inTime);
                 const totalHours = (diffMs / (1000 * 60 * 60)).toFixed(2);
