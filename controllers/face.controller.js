@@ -136,8 +136,13 @@ exports.registerFace = async (req, res) => {
 
         const descriptorJson = JSON.stringify(descriptor);
 
-        // --- PREVENT DUPLICATE FACES ---
-        const [allFaces] = await db.execute('SELECT employee_id, descriptor FROM face_embeddings WHERE employee_id != ?', [employee_id]);
+        // --- PREVENT DUPLICATE FACES (Within the same company) ---
+        const [allFaces] = await db.execute(`
+            SELECT fe.employee_id, fe.descriptor 
+            FROM face_embeddings fe
+            JOIN employees e ON e.id = fe.employee_id
+            WHERE fe.employee_id != ? AND e.company_id = ?
+        `, [employee_id, emp[0].company_id]);
         
         let duplicateFound = false;
         for (let row of allFaces) {
@@ -150,7 +155,7 @@ exports.registerFace = async (req, res) => {
         }
         
         if (duplicateFound) {
-            return res.status(400).json({ message: 'This face is already registered with another employee.' });
+            return res.status(400).json({ message: 'This face is already registered with another employee in your company.' });
         }
         // --------------------------------
 
@@ -485,5 +490,25 @@ exports.getFaceStatus = async (req, res) => {
         }
     } catch (error) {
         res.status(500).json({ message: 'Internal Server Error' });
+    }
+};
+
+exports.deleteFace = async (req, res) => {
+    try {
+        const { employee_id } = req.params;
+        
+        const [emp] = await db.execute('SELECT id, company_id FROM employees WHERE id = ?', [employee_id]);
+        if (emp.length === 0) {
+            return res.status(404).json({ message: 'Employee not found.' });
+        }
+        if (req.user.role !== 'MasterAdmin' && emp[0].company_id !== req.user.company_id) {
+            return res.status(403).json({ message: 'Unauthorized to modify this employee.' });
+        }
+
+        await db.execute('DELETE FROM face_embeddings WHERE employee_id = ?', [employee_id]);
+        res.json({ success: true, message: 'Face biometric data cleared successfully.' });
+    } catch (error) {
+        console.error('Delete face error:', error);
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
 };
